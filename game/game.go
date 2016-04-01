@@ -3,6 +3,7 @@ package game
 import (
 	"container/list"
 	"log"
+	"math"
 	"time"
 )
 
@@ -12,31 +13,29 @@ type Terrain struct {
 }
 
 type Location struct {
-	X, Y float32
+	X, Y float64
 }
 
 type Area struct {
 	Location      Location
-	Height, Width uint8
+	Height, Width int
 }
 
 type Character struct {
 	Culture    *Culture
-	MovePerSec float32
-	WorkPerSec float32
+	MovePerSec float64
+	WorkPerSec float64
 	Area       Area
-	Carrying   float32
-	MaxCarry   float32
-	OffsetX    float32
-	OffsetY    float32
+	Carrying   float64
+	MaxCarry   float64
 	Target     interface{}
 }
 
 type House struct {
 	Culture       *Culture
 	Area          Area
-	ResourcesLeft float32 // TODO - float resources means rounding errors!
-	MaxResources  float32
+	ResourcesLeft float64 // TODO - float resources means rounding errors!
+	MaxResources  float64
 }
 
 type Culture struct {
@@ -48,141 +47,134 @@ type Culture struct {
 type Game struct {
 	cultures   []Culture
 	lastUpdate time.Time
+	terrain    *Terrain
 }
 
 // Propose a new location given an origin, target, speed and duration.
+// return value is an absolute location
 func chooseMove(from Location, to Location,
-	speedPerSec float32, dt time.Duration) (float32, float32) {
-	var dirX, dirY float32
-	deltaX := from.X - to.X
-	deltaY := from.Y - to.Y
-	absX := deltaX
-	absY := deltaY
-	if deltaX < 0 {
-		absX = -deltaX
-	}
-	if deltaY < 0 {
-		absY = -deltaY
+	speedPerSec float64, dt time.Duration) Location {
+	if dt == 0 {
+		return from
 	}
 
-	if absX < absY {
-		if deltaY < 0 {
-			dirX, dirY = 0, -1
-		}
-		if deltaY > 0 {
-			dirX, dirY = 0, 1
-		}
-	} else {
-		if deltaX < 0 {
-			dirX, dirY = -1, 0
-		}
-		if deltaX > 0 {
-			dirX, dirY = 1, 0
-		}
+	deltaX := to.X - from.X
+	deltaY := to.Y - from.Y
+	wholeJourneyDist := math.Hypot(deltaX, deltaY)
+	canMoveDist := speedPerSec / dt.Seconds()
+	canMovePortion := canMoveDist / wholeJourneyDist
+	if canMovePortion > 1.0 {
+		canMovePortion = 1.0
 	}
 
-	moveX := dirX * speedPerSec / float32(dt.Seconds())
-	moveY := dirY * speedPerSec / float32(dt.Seconds())
+	canMoveX := deltaX * canMovePortion
+	canMoveY := deltaY * canMovePortion
 
-	return moveX, moveY
+	return Location{
+		X: from.X + canMoveX,
+		Y: from.Y + canMoveY,
+	}
 }
 
-// Attempts to move the character from their current position to
-// moveX, moveY. May move the character a shorter distance, or no
-// distance at all.
-func attemptMove(who *Character, terrain *Terrain, moveX, moveY float32) {
-	moveX += who.OffsetX
-	moveY += who.OffsetY
-	for moveX > 1 && moveY > 1 && moveX < -1 && moveY < -1 {
-		origin := who.Area.Location
-		width := who.Area.Width
-		height := who.Area.Height
+// Attempts to move the character from their current position to the
+// absolute position moveX, moveY. May move the character a shorter
+// distance, or no distance at all.
+func attemptMove(who *Character, terrain *Terrain, attempt Location) {
+	moveTileXf, moveOffsetX := math.Modf(attempt.X)
+	moveTileYf, moveOffsetY := math.Modf(attempt.Y)
+	moveTileX, moveTileY := int(moveTileXf), int(moveTileYf)
+	width := who.Area.Width
+	height := who.Area.Height
 
-		destX := int(origin.X)
-		destY := int(origin.Y)
-		if moveX > 0 {
-			destX, moveX = destX+1, moveX-1
-		}
-		if moveX < 0 {
-			destX, moveX = destX-1, moveX+1
-		}
-		if moveY > 0 {
-			destY, moveY = destY+1, moveY-1
-		}
-		if moveY < 0 {
-			destY, moveY = destY-1, moveY+1
+	if moveTileX < 0 {
+		moveTileX = 0
+	}
+	if moveTileY < 0 {
+		moveTileY = 0
+	}
+	if moveTileX > terrain.XMax {
+		moveTileX = terrain.XMax
+	}
+	if moveTileY > terrain.YMax {
+		moveTileY = terrain.YMax
+	}
+
+	originTileXf, _ := math.Modf(who.Area.Location.X)
+	originTileYf, _ := math.Modf(who.Area.Location.Y)
+	originTileX, originTileY := int(originTileXf), int(originTileYf)
+
+stepforward:
+	for originTileX != moveTileX || originTileY != moveTileY {
+		destX := originTileX
+		destY := originTileY
+		switch {
+		case originTileX < moveTileX:
+			destX = destX + 1
+		case originTileX > moveTileX:
+			destX = destX - 1
+		case originTileY < moveTileY:
+			destY = destY + 1
+		case originTileY > moveTileY:
+			destY = destY - 1
 		}
 
-		if destX < 0 {
-			destX = 0
-		}
-		if destY < 0 {
-			destY = 0
-		}
-		if destX+width > terrain.XMax {
-			destX = MaxCoord - width
-		}
-		if destY+height > terrain.YMax {
-			destY = MaxCoord - height
-		}
-
-		if destX != origin.X || destY != origin.Y {
-			clear := true
-		WHILECLEAR:
-			for x := 0; x < width; x++ {
-				for y := 0; y < height; y++ {
-					tryX := destX + x
-					tryY := destY + y
-					occupant := terrain.Board[tryX][tryY]
-					if nil != occupant || who != occupant {
-						clear = false
-						break WHILECLEAR
-					}
+		for x := 0; x < width; x++ {
+			for y := 0; y < height; y++ {
+				tryX := destX + x
+				tryY := destY + y
+				occupant := terrain.Board[tryX][tryY]
+				if nil != occupant || who != occupant {
+					// TODO, if who is blocked in X direction they
+					// should still advance along the Y direction
+					break stepforward
 				}
 			}
+		}
 
-			if clear {
-				for x := 0; x < width; x++ {
-					for y := 0; y < height; y++ {
-						oldX := origin.X + x
-						oldY := origin.Y + y
-						terrain.Board[oldX][oldY] = nil
-					}
-				}
+		for x := 0; x < width; x++ {
+			for y := 0; y < height; y++ {
+				oldX := originTileX + x
+				oldY := originTileY + y
+				terrain.Board[oldX][oldY] = nil
+			}
+		}
 
-				for x := 0; x < width; x++ {
-					for y := 0; y < height; y++ {
-						newX := destX + x
-						newY := destY + y
-						terrain.Board[newX][newY] = who
-					}
-				}
+		for x := 0; x < width; x++ {
+			for y := 0; y < height; y++ {
+				newX := destX + x
+				newY := destY + y
+				terrain.Board[newX][newY] = who
+			}
+		}
 
-				who.Area.Location.X = destX
-				who.Area.Location.Y = destY
-			} // if clear
-		} // if dest != origin
-	} // for move
-
-	if moveX >= 1 || moveX <= -1 || moveY >= 1 || moveY <= -1 {
-		panic("proposed move not consumed in the attempt")
+		originTileX = destX
+		originTileY = destY
 	}
 
-	who.OffsetX = moveX
-	who.OffsetY = moveY
+	if originTileX == moveTileX {
+		who.Area.Location.X = float64(originTileX) + moveOffsetX
+	} else {
+		who.Area.Location.X = float64(originTileX)
+	}
+
+	if originTileY == moveTileY {
+		who.Area.Location.Y = float64(originTileY) + moveOffsetY
+	} else {
+		who.Area.Location.Y = float64(originTileY)
+	}
 }
 
-const shadowSize float32 = 1
+const shadowSize float64 = 1
 
-func insideOfShadow(who *Character, target *House) {
+func insideOfShadow(who *Character, target *House) bool {
 	shadowXMin := target.Area.Location.X - shadowSize
 	shadowYMin := target.Area.Location.Y - shadowSize
-	shadowXMax := target.Area.Location.X + target.Area.Width + shadowSize
-	shadowYMax := target.Area.Location.Y + target.Area.Height + shadowSize
+	shadowXMax := target.Area.Location.X + float64(target.Area.Width) + shadowSize
+	shadowYMax := target.Area.Location.Y + float64(target.Area.Height) + shadowSize
 	whoXMin := who.Area.Location.X
 	whoYMin := who.Area.Location.Y
-	whoXMax := who.Area.Location.X + who.Area.Width
-	whoYMax := who.Area.Location.Y + who.Area.Height
+	whoXMax := who.Area.Location.X + float64(who.Area.Width)
+	whoYMax := who.Area.Location.Y + float64(who.Area.Height)
 	xOverlap :=
 		(whoXMin > shadowXMin && whoXMin < shadowXMax) ||
 			(whoXMax > shadowXMin && whoXMax < shadowXMax)
@@ -191,6 +183,8 @@ func insideOfShadow(who *Character, target *House) {
 		return (whoYMin > shadowYMin && whoYMin < shadowYMax) ||
 			(whoYMax > shadowYMin && whoYMax < shadowYMax)
 	}
+
+	return false
 }
 
 func mine(who *Character, target *House, dt time.Duration) {
@@ -211,8 +205,8 @@ func mine(who *Character, target *House, dt time.Duration) {
 func build(who *Character, target *House, dt time.Duration) {
 	transfer := who.WorkPerSec * dt.Seconds()
 
-	if transfer > target.MaxResource-target.ResourcesLeft {
-		transfer = target.MaxResource - target.ResourcesLeft
+	if transfer > target.MaxResources-target.ResourcesLeft {
+		transfer = target.MaxResources - target.ResourcesLeft
 	}
 	if transfer > who.Carrying {
 		transfer = who.Carrying
@@ -224,14 +218,14 @@ func build(who *Character, target *House, dt time.Duration) {
 
 func rerankHouse(house *House) {
 	if house.ResourcesLeft == 0 {
-		delete(Culture.BuiltHouses, house)
+		delete(house.Culture.BuiltHouses, house)
 	}
 }
 
 func reevaluateTargetHouse(who *Character) {
 	house := who.Target.(*House)
 	if _, ok := house.Culture.PlannedHouses[house]; !ok {
-		if _, ok := house.Culture.BuildHouses[house]; !ok {
+		if _, ok := house.Culture.BuiltHouses[house]; !ok {
 			goto abandon // House has gone away
 		}
 	}
@@ -257,42 +251,42 @@ abandon:
 }
 
 func Tick(game Game, now time.Time) {
-	dt := now - game.lastUpdate
+	dt := now.Sub(game.lastUpdate)
 
 	// TODO shouldn't iterate by culture, or one team gets to move
 	// before the other
-	for _, culture := range Game.cultures {
+	for _, culture := range game.cultures {
 		for e := culture.Characters.Front(); e != nil; e = e.Next() {
 			who := e.Value.(*Character)
 			switch target := who.Target.(type) {
 			case *Location:
-				x, y := chooseMove(
+				choice := chooseMove(
 					who.Area.Location,
-					target,
+					*target,
 					who.MovePerSec,
 					dt,
 				)
-				attemptMove(who, terrain, x, y)
+				attemptMove(who, game.terrain, choice)
 			case *House:
 				if insideOfShadow(who, target) {
 					if who.Culture == target.Culture {
-						build(who, target)
+						build(who, target, dt)
 					} else {
-						mine(who, target)
+						mine(who, target, dt)
 					}
 					rerankHouse(target)
 				} else {
 					workTarget := Location{
-						X: target.Area.Location.X + target.Area.Width/2,
-						Y: target.Area.Locatoin.Y + target.Area.Height/2,
+						X: target.Area.Location.X + float64(target.Area.Width)/2,
+						Y: target.Area.Location.Y + float64(target.Area.Height)/2,
 					}
-					x, y := chooseMove(
+					choice := chooseMove(
 						who.Area.Location,
 						workTarget,
 						who.MovePerSec,
 						dt,
 					)
-					attemptMove(who, terrain, x, y)
+					attemptMove(who, game.terrain, choice)
 				}
 				reevaluateTargetHouse(who)
 			case nil:
@@ -302,4 +296,6 @@ func Tick(game Game, now time.Time) {
 			}
 		}
 	}
+
+	game.lastUpdate = now
 }
