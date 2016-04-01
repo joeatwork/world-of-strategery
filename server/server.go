@@ -1,30 +1,31 @@
 package server
 
-// Commands a character to target coordinates. If the target is
-// minable, and the character can carry resources, it will mine. If
-// the target is buildable and the character has resources, it will
-// deposit those resources.
-func CommandGo(s *Server, you *game.Character, x game.Coord, y game.Coord) error {
-	if !standsInBounds(x, y, you) {
-		return OutOfBoundsError
-	}
-	you.XTarget = x
-	you.YTarget = y
+// Commands a character to target coordinates. Character will try to
+// get there, and then go idle.
+func CommandGo(s *Server, you *game.Character, where *game.Location) error {
+	you.Target = where
 }
 
-// Command a character to build a new foundation for a building at the
-// given coordinates. A culture has one or zero planned buildings at a time.
-func CommandStartHouse(s *Server, you *Character, us *Culture, kind HouseKind,
-	x game.Coord, y game.Coord) {
-	if !fitsInBounds(x, y, kind) {
-		return OutOfBoundsError
+// Commands a character to got to work mining or building
+// what. Character will try to get there, do as much work as it can,
+// and then go idle
+func CommandWork(s *Server, you *game.Character, what *game.House) error {
+	you.Target = what
+}
+
+// Propose adding a house. The proposed house (if unblocked) will be
+// eligible for building.
+func CommandStartHouse(s *Server, us *game.Culture,
+	kind HouseKind, where *game.Location) {
+	house := game.House{
+		Location: *where,
+		Kind:     kind,
+		Culture:  us,
 	}
-	you.XTarget = x
-	you.YTarget = y
-	us.PlannedBuilding = game.Building{
-		X:       x,
-		Y:       y,
-		Kind:    kind,
-		Culture: us,
-	}
+	us.PlannedHouses[house] = true
+}
+
+// Abandon the plan to build a house.
+func AbandonPlannedHouse(s *Server, us *game.Culture, what *game.House) error {
+	delete(us.PlannedHouses, what)
 }
