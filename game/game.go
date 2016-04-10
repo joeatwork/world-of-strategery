@@ -2,52 +2,74 @@ package game
 
 import (
 	"container/list"
+	"fmt"
 	"log"
 	"math"
 	"time"
 )
 
+const defaultShadowSize float64 = 1
+
 type Terrain struct {
-	Board      [][]interface{}
-	XMax, YMax int
+	Board         [][]interface{} // TODO serializing?
+	Width, Height int
 }
 
 type Location struct {
-	X, Y float64
+	X, Y             int
+	OffsetX, OffsetY float64
 }
 
-type Area struct {
-	Location      Location
-	Height, Width int
+func FloatsFromLocation(l Location) (float64, float64) {
+	return float64(l.X) + l.OffsetX, float64(l.Y) + l.OffsetY
+}
+
+func LocationFromFloats(x, y float64) Location {
+	xf, offsetX := math.Modf(x)
+	yf, offsetY := math.Modf(y)
+	return Location{
+		X:       int(xf),
+		Y:       int(yf),
+		OffsetX: offsetX,
+		OffsetY: offsetY,
+	}
+}
+
+type CharacterType struct {
+	MovePerSec, WorkPerSec, MaxCarry float64
+	Width, Height                    int
 }
 
 type Character struct {
-	Culture    *Culture
-	MovePerSec float64
-	WorkPerSec float64
-	Area       Area
-	Carrying   float64
-	MaxCarry   float64
-	Target     interface{}
+	Carrying float64
+	Culture  *Culture
+	Location Location
+	Target   interface{}
+	Type     *CharacterType
+}
+
+type HouseType struct {
+	MaxResources  float64
+	Width, Height int
 }
 
 type House struct {
+	Type          HouseType
 	Culture       *Culture
-	Area          Area
-	ResourcesLeft float64 // TODO - float resources means rounding errors!
-	MaxResources  float64
+	Location      Location
+	ResourcesLeft float64
 }
 
 type Culture struct {
-	Characters    list.List // <House>
+	Characters    list.List
 	PlannedHouses map[*House]bool
 	BuiltHouses   map[*House]bool
 }
 
 type Game struct {
-	cultures   []Culture
+	Cultures   []*Culture
 	lastUpdate time.Time
-	terrain    *Terrain
+	terrain    Terrain
 }
 
 // Propose a new location given an origin, target, speed and duration.
@@ -57,9 +79,11 @@ func chooseMove(from Location, to Location,
 	if dt == 0 {
 		return from
 	}
+	fromX, fromY := FloatsFromLocation(from)
+	toX, toY := FloatsFromLocation(to)
 
-	deltaX := to.X - from.X
-	deltaY := to.Y - from.Y
+	deltaX := toX - fromX
+	deltaY := toY - fromY
 	wholeJourneyDist := math.Hypot(deltaX, deltaY)
 	canMoveDist := speedPerSec / dt.Seconds()
 	canMovePortion := canMoveDist / wholeJourneyDist
@@ -70,111 +94,243 @@ func chooseMove(from Location, to Location,
 	canMoveX := deltaX * canMovePortion
 	canMoveY := deltaY * canMovePortion
 
-	return Location{
-		X: from.X + canMoveX,
-		Y: from.Y + canMoveY,
+	return LocationFromFloats(
+		fromX+canMoveX,
+		fromY+canMoveY,
+	)
+}
+
+func isTerrainClear(who interface{}, terrain Terrain, x, y, width, height int) bool {
+	if x < 0 || x+width > terrain.Width {
+		return false
+	}
+	if y < 0 || y+height > terrain.Height {
+		return false
+	}
+	for checkX := 0; checkX < width; checkX++ {
+		for checkY := 0; checkY < height; checkY++ {
+			tryX, tryY := x+checkX, y+checkY
+			occupant := terrain.Board[tryX][tryY]
+			if nil != occupant && who != occupant {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+const maxMoveStack = 64
+const maxShortMoveSide = 8
+
+type tilePosition struct {
+	x, y int
+}
+
+// who.Location.X - goal.Location.X must be less than maxShortMoveSide
+// who.Location.Y - goal.Location.Y must be less than maxShortMoveSide
+//
+// who.Location will not be further away from goal after a call to
+// attemptShortMove
+func attemptShortMove(who *Character, terrain Terrain, goal Location) {
+	var marks [maxShortMoveSide][maxShortMoveSide]bool
+	var stack [maxMoveStack]tilePosition
+
+	dx := goal.X - who.Location.X
+	dy := goal.Y - who.Location.Y
+	if dx == 0 && dy == 0 {
+		who.Location = goal // There could be Offset changes here
+		return
+	}
+	if dx > maxShortMoveSide || dx < -maxShortMoveSide {
+		panic("attemptShortMove called with X move beyond max size")
+	}
+	if dy > maxShortMoveSide || dy < -maxShortMoveSide {
+		panic("attemptShortMove called with Y move beyond max size")
+	}
+
+	var regionOriginX int
+	var regionOriginY int
+	if dx < 0 {
+		marginX := (maxShortMoveSide + dx) / 2
+		regionOriginX = goal.X - marginX
+	} else {
+		marginX := (maxShortMoveSide - dx) / 2
+		regionOriginX = who.Location.X - marginX
+	}
+	if dy < 0 {
+		marginY := (maxShortMoveSide + dy) / 2
+		regionOriginY = goal.Y - marginY
+	} else {
+		marginY := (maxShortMoveSide - dy) / 2
+		regionOriginY = who.Location.Y - marginY
+	}
+
+	marks[who.Location.X-regionOriginX][who.Location.Y-regionOriginY] = true
+	checkAndMark := func(tryX, tryY int) bool {
+		markX := tryX - regionOriginX
+		if markX < 0 || markX > maxShortMoveSide {
+			fmt.Printf("TODO X: %d(%d) outside of (0,%d)\n",
+				markX, tryX, maxShortMoveSide)
+			return false
+		}
+		markY := tryY - regionOriginY
+		if markY < 0 || markY > maxShortMoveSide {
+			fmt.Printf("TODO Y: %d(%d) outside of (0,%d)\n",
+				markY, tryY, maxShortMoveSide)
+			return false
+		}
+
+		if marks[markX][markY] {
+			fmt.Printf("TODO Y: %d,%d(%d,%d) is marked\n",
+				markX, markY, tryX, tryY)
+
+			return false
+		}
+
+		clear := isTerrainClear(
+			who,
+			terrain,
+			tryX,
+			tryY,
+			who.Type.Width,
+			who.Type.Height,
+		)
+
+		if !clear {
+			fmt.Printf("TODO: %d,%d is blocked/out of terrain bounds\n",
+				tryX, tryY)
+			return false
+		}
+
+		fmt.Printf("TODO marking %d,%d(%d,%d)\n", markX, markY, tryX, tryY)
+		marks[markX][markY] = true
+		return true
+	}
+
+	stack[0].x = who.Location.X
+	stack[0].y = who.Location.Y
+	stackDepth := 1
+	goalTile := tilePosition{
+		x: goal.X,
+		y: goal.Y,
+	}
+
+	var current tilePosition
+	for stackDepth > 0 {
+		fmt.Printf("TODO Top of stack[%d] is %v\n", stackDepth, stack[stackDepth-1])
+		stackDepth--
+		current = stack[stackDepth]
+		if current == goalTile {
+			break
+		}
+
+		switch {
+		case checkAndMark(current.x-1, current.y):
+			stack[stackDepth].x = current.x - 1
+			stack[stackDepth].y = current.y
+			stackDepth++
+		case checkAndMark(current.x+1, current.y):
+			stack[stackDepth].x = current.x + 1
+			stack[stackDepth].y = current.y
+			stackDepth++
+		case checkAndMark(current.x, current.y-1):
+			stack[stackDepth].x = current.x
+			stack[stackDepth].y = current.y - 1
+			stackDepth++
+		case checkAndMark(current.x, current.y+1):
+			stack[stackDepth].x = current.x
+			stack[stackDepth].y = current.y + 1
+			stackDepth++
+		}
+	}
+
+	newDx, newDy := goal.X-current.x, goal.Y-current.y
+	if dx*dx+dy*dy <= newDx*newDx+newDy*newDy {
+		return
+	}
+
+	for x := 0; x < who.Type.Width; x++ {
+		for y := 0; y < who.Type.Height; y++ {
+			oldX := who.Location.X + x
+			oldY := who.Location.Y + y
+			terrain.Board[oldX][oldY] = nil
+		}
+	}
+
+	for x := 0; x < who.Type.Width; x++ {
+		for y := 0; y < who.Type.Height; y++ {
+			newX := current.x + x
+			newY := current.y + y
+			terrain.Board[newX][newY] = who
+		}
+	}
+
+	if current == goalTile {
+		who.Location = goal
+	} else {
+		who.Location = Location{
+			X:       current.x,
+			Y:       current.y,
+			OffsetX: 0,
+			OffsetY: 0,
+		}
 	}
 }
 
 // Attempts to move the character from their current position to the
-// absolute position moveX, moveY. May move the character a shorter
-// distance, or no distance at all.
-func attemptMove(who *Character, terrain *Terrain, attempt Location) {
-	moveTileXf, moveOffsetX := math.Modf(attempt.X)
-	moveTileYf, moveOffsetY := math.Modf(attempt.Y)
-	moveTileX, moveTileY := int(moveTileXf), int(moveTileYf)
-	width := who.Area.Width
-	height := who.Area.Height
-
-	if moveTileX < 0 {
-		moveTileX = 0
-	}
-	if moveTileY < 0 {
-		moveTileY = 0
-	}
-	if moveTileX > terrain.XMax {
-		moveTileX = terrain.XMax
-	}
-	if moveTileY > terrain.YMax {
-		moveTileY = terrain.YMax
-	}
-
-	originTileXf, _ := math.Modf(who.Area.Location.X)
-	originTileYf, _ := math.Modf(who.Area.Location.Y)
-	originTileX, originTileY := int(originTileXf), int(originTileYf)
-
-stepforward:
-	for originTileX != moveTileX || originTileY != moveTileY {
-		destX := originTileX
-		destY := originTileY
+// absolute position moveX, moveY. Move will stop if obstructed by
+// terrain bounds or other objects. Updates the terrain and location
+// of the given character.
+func attemptMove(who *Character, terrain Terrain, goal Location) {
+	// The only guarantees the current implementation of attemptMove
+	// gives is
+	//
+	// 1) If the smallest rectangle containing who.Location and goal
+	// is empty, who will be moved to goal
+	//
+	// 2) who.Location will never be further away from goal after a
+	// call to attemptMove than it was before the call
+	for {
+		dx, dy := goal.X-who.Location.X, goal.Y-who.Location.Y
+		nextGoal := goal
 		switch {
-		case originTileX < moveTileX:
-			destX = destX + 1
-		case originTileX > moveTileX:
-			destX = destX - 1
-		case originTileY < moveTileY:
-			destY = destY + 1
-		case originTileY > moveTileY:
-			destY = destY - 1
+		case dx > maxShortMoveSide:
+			nextGoal.X = who.Location.X + maxShortMoveSide
+			nextGoal.OffsetX = 0.0
+		case dx < -maxShortMoveSide:
+			nextGoal.X = who.Location.X - maxShortMoveSide
+			nextGoal.OffsetX = 0.0
 		}
 
-		for x := 0; x < width; x++ {
-			for y := 0; y < height; y++ {
-				tryX := destX + x
-				tryY := destY + y
-				occupant := terrain.Board[tryX][tryY]
-				if nil != occupant || who != occupant {
-					// TODO, if who is blocked in X direction they
-					// should still advance along the Y direction
-					break stepforward
-				}
-			}
+		switch {
+		case dy > maxShortMoveSide:
+			nextGoal.Y = who.Location.Y + maxShortMoveSide
+			nextGoal.OffsetY = 0.0
+		case dx < -maxShortMoveSide:
+			nextGoal.Y = who.Location.Y - maxShortMoveSide
+			nextGoal.OffsetY = 0.0
 		}
 
-		for x := 0; x < width; x++ {
-			for y := 0; y < height; y++ {
-				oldX := originTileX + x
-				oldY := originTileY + y
-				terrain.Board[oldX][oldY] = nil
-			}
+		start := who.Location
+		fmt.Printf("Attempting short move from %v to %v via %v\n",
+			who.Location, goal, nextGoal)
+		attemptShortMove(who, terrain, nextGoal)
+		if who.Location == start {
+			break
 		}
-
-		for x := 0; x < width; x++ {
-			for y := 0; y < height; y++ {
-				newX := destX + x
-				newY := destY + y
-				terrain.Board[newX][newY] = who
-			}
-		}
-
-		originTileX = destX
-		originTileY = destY
-	}
-
-	if originTileX == moveTileX {
-		who.Area.Location.X = float64(originTileX) + moveOffsetX
-	} else {
-		who.Area.Location.X = float64(originTileX)
-	}
-
-	if originTileY == moveTileY {
-		who.Area.Location.Y = float64(originTileY) + moveOffsetY
-	} else {
-		who.Area.Location.Y = float64(originTileY)
 	}
 }
 
-const shadowSize float64 = 1
-
-func insideOfShadow(who *Character, target *House) bool {
-	shadowXMin := target.Area.Location.X - shadowSize
-	shadowYMin := target.Area.Location.Y - shadowSize
-	shadowXMax := target.Area.Location.X + float64(target.Area.Width) + shadowSize
-	shadowYMax := target.Area.Location.Y + float64(target.Area.Height) + shadowSize
-	whoXMin := who.Area.Location.X
-	whoYMin := who.Area.Location.Y
-	whoXMax := who.Area.Location.X + float64(who.Area.Width)
-	whoYMax := who.Area.Location.Y + float64(who.Area.Height)
+func insideOfShadow(shadowSize float64, who *Character, target *House) bool {
+	targetX, targetY := FloatsFromLocation(target.Location)
+	whoXMin, whoYMin := FloatsFromLocation(who.Location)
+	whoXMax := whoXMin + float64(who.Type.Width)
+	whoYMax := whoYMin + float64(who.Type.Height)
+	shadowXMin := targetX - shadowSize
+	shadowYMin := targetY - shadowSize
+	shadowXMax := targetX + float64(target.Type.Width) + shadowSize
+	shadowYMax := targetY + float64(target.Type.Height) + shadowSize
 	xOverlap :=
 		(whoXMin > shadowXMin && whoXMin < shadowXMax) ||
 			(whoXMax > shadowXMin && whoXMax < shadowXMax)
@@ -188,14 +344,14 @@ func insideOfShadow(who *Character, target *House) bool {
 }
 
 func mine(who *Character, target *House, dt time.Duration) {
-	transfer := who.WorkPerSec * dt.Seconds()
+	transfer := who.Type.WorkPerSec * dt.Seconds()
 
 	// Mining
 	if transfer > target.ResourcesLeft {
 		transfer = target.ResourcesLeft
 	}
-	if transfer > who.MaxCarry-who.Carrying {
-		transfer = who.MaxCarry - who.Carrying
+	if transfer > who.Type.MaxCarry-who.Carrying {
+		transfer = who.Type.MaxCarry - who.Carrying
 	}
 
 	target.ResourcesLeft = target.ResourcesLeft - transfer
@@ -203,10 +359,10 @@ func mine(who *Character, target *House, dt time.Duration) {
 }
 
 func build(who *Character, target *House, dt time.Duration) {
-	transfer := who.WorkPerSec * dt.Seconds()
+	transfer := who.Type.WorkPerSec * dt.Seconds()
 
-	if transfer > target.MaxResources-target.ResourcesLeft {
-		transfer = target.MaxResources - target.ResourcesLeft
+	if transfer > target.Type.MaxResources-target.ResourcesLeft {
+		transfer = target.Type.MaxResources - target.ResourcesLeft
 	}
 	if transfer > who.Carrying {
 		transfer = who.Carrying
@@ -234,11 +390,11 @@ func reevaluateTargetHouse(who *Character) {
 		if who.Carrying == 0 {
 			goto abandon // nothing left to build with
 		}
-		if house.ResourcesLeft >= house.MaxResources {
+		if house.ResourcesLeft >= house.Type.MaxResources {
 			goto abandon // our work is done
 		}
 	} else { // Mining
-		if who.Carrying >= who.MaxCarry {
+		if who.Carrying >= who.Type.MaxCarry {
 			goto abandon // can't carry any more
 		}
 	}
@@ -250,25 +406,92 @@ abandon:
 	return
 }
 
+func NewGame(numCultures, width, height int) Game {
+	ret := Game{
+		Cultures: make([]*Culture, numCultures),
+		terrain: Terrain{
+			Board:  make([][]interface{}, width),
+			Width:  width,
+			Height: height,
+		},
+	}
+
+	for i, _ := range ret.Cultures {
+		ret.Cultures[i] = &Culture{}
+	}
+
+	for i, _ := range ret.terrain.Board {
+		ret.terrain.Board[i] = make([]interface{}, ret.terrain.Height)
+	}
+
+	return ret
+}
+
+type CantPlaceCharacterError struct {
+	msg string
+}
+
+func (e *CantPlaceCharacterError) Error() string {
+	return e.msg
+}
+
+func AddCharacter(terrain Terrain, culture *Culture,
+	ctype *CharacterType, loc Location) (*Character, *CantPlaceCharacterError) {
+	positionClear := isTerrainClear(
+		nil,
+		terrain,
+		int(loc.X),
+		int(loc.Y),
+		ctype.Width,
+		ctype.Height,
+	)
+
+	if !positionClear {
+		return nil, &CantPlaceCharacterError{
+			"can't place character, position is occupied or out of bounds",
+		}
+	}
+
+	character := &Character{
+		Culture:  culture,
+		Location: loc,
+		Type:     ctype,
+	}
+
+	for x := 0; x < character.Type.Width; x++ {
+		for y := 0; y < character.Type.Height; y++ {
+			placeX, placeY := int(loc.X)+x, int(loc.Y)+y
+			terrain.Board[placeX][placeY] = character
+		}
+	}
+
+	return character, nil
+}
+
 func Tick(game Game, now time.Time) {
+	if game.lastUpdate.IsZero() {
+		game.lastUpdate = now
+		return
+	}
+
 	dt := now.Sub(game.lastUpdate)
 
 	// TODO shouldn't iterate by culture, or one team gets to move
 	// before the other
-	for _, culture := range game.cultures {
+	for _, culture := range game.Cultures {
 		for e := culture.Characters.Front(); e != nil; e = e.Next() {
 			who := e.Value.(*Character)
 			switch target := who.Target.(type) {
 			case *Location:
 				choice := chooseMove(
-					who.Area.Location,
+					who.Location,
 					*target,
-					who.MovePerSec,
+					who.Type.MovePerSec,
 					dt,
 				)
 				attemptMove(who, game.terrain, choice)
 			case *House:
-				if insideOfShadow(who, target) {
+				if insideOfShadow(defaultShadowSize, who, target) {
 					if who.Culture == target.Culture {
 						build(who, target, dt)
 					} else {
@@ -276,14 +499,15 @@ func Tick(game Game, now time.Time) {
 					}
 					rerankHouse(target)
 				} else {
-					workTarget := Location{
-						X: target.Area.Location.X + float64(target.Area.Width)/2,
-						Y: target.Area.Location.Y + float64(target.Area.Height)/2,
-					}
+					targetX, targetY := FloatsFromLocation(target.Location)
+					workTarget := LocationFromFloats(
+						targetX+float64(target.Type.Width)/2,
+						targetY+float64(target.Type.Height)/2,
+					)
 					choice := chooseMove(
-						who.Area.Location,
+						who.Location,
 						workTarget,
-						who.MovePerSec,
+						who.Type.MovePerSec,
 						dt,
 					)
 					attemptMove(who, game.terrain, choice)
