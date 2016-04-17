@@ -15,6 +15,48 @@ type Terrain struct {
 	Width, Height int
 }
 
+type Location struct {
+	X, Y             int
+	OffsetX, OffsetY float64
+}
+
+type CharacterType struct {
+	MovePerSec, WorkPerSec, MaxCarry float64
+	Width, Height                    int
+}
+
+type Character struct {
+	Carrying float64
+	Culture  *Culture
+	Location Location
+	Target   interface{}
+	Type     *CharacterType
+}
+
+type HouseType struct {
+	MaxResources  float64
+	Width, Height int
+}
+
+type House struct {
+	Type          *HouseType
+	Culture       *Culture
+	Location      Location
+	ResourcesLeft float64
+}
+
+type Culture struct {
+	Characters    list.List
+	PlannedHouses map[*House]bool
+	BuiltHouses   map[*House]bool
+}
+
+type Game struct {
+	Cultures   []*Culture
+	lastUpdate time.Time
+	terrain    Terrain
+}
+
 func DumpTerrain(terrain Terrain) {
 	chars := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?"
 	nextChar := 0
@@ -42,11 +84,6 @@ func DumpTerrain(terrain Terrain) {
 	}
 }
 
-type Location struct {
-	X, Y             int
-	OffsetX, OffsetY float64
-}
-
 func FloatsFromLocation(l Location) (float64, float64) {
 	return float64(l.X) + l.OffsetX, float64(l.Y) + l.OffsetY
 }
@@ -60,43 +97,6 @@ func LocationFromFloats(x, y float64) Location {
 		OffsetX: offsetX,
 		OffsetY: offsetY,
 	}
-}
-
-type CharacterType struct {
-	MovePerSec, WorkPerSec, MaxCarry float64
-	Width, Height                    int
-}
-
-type Character struct {
-	Carrying float64
-	Culture  *Culture
-	Location Location
-	Target   interface{}
-	Type     *CharacterType
-}
-
-type HouseType struct {
-	MaxResources  float64
-	Width, Height int
-}
-
-type House struct {
-	Type          HouseType
-	Culture       *Culture
-	Location      Location
-	ResourcesLeft float64
-}
-
-type Culture struct {
-	Characters    list.List
-	PlannedHouses map[*House]bool
-	BuiltHouses   map[*House]bool
-}
-
-type Game struct {
-	Cultures   []*Culture
-	lastUpdate time.Time
-	terrain    Terrain
 }
 
 // Propose a new location given an origin, target, speed and duration.
@@ -163,8 +163,6 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 	var marks [maxShortMoveSide][maxShortMoveSide]bool
 	var stack [maxMoveStack]tilePosition
 
-	fmt.Printf("Short Move %v => %v\n", who.Location, goal)
-
 	dx := goal.X - who.Location.X
 	dy := goal.Y - who.Location.Y
 	if dx == 0 && dy == 0 {
@@ -207,11 +205,7 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 			return false
 		}
 
-		fmt.Printf("Checking mark %d,%d (loc %d, %d) : ",
-			markX, markY, tryX, tryY)
-
 		if marks[markX][markY] {
-			fmt.Printf("Marked!\n")
 			return false
 		}
 
@@ -225,11 +219,9 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 		)
 
 		if !clear {
-			fmt.Printf("not clear!\n")
 			return false
 		}
 
-		fmt.Printf("clear\n")
 		marks[markX][markY] = true
 		return true
 	}
@@ -248,8 +240,6 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 		if current == goalTile {
 			break
 		}
-
-		fmt.Printf("CURRENT: %v, STACK: %v\n", current, stack[:stackDepth])
 
 		switch {
 		case checkAndMark(current.x+1, current.y):
@@ -443,7 +433,10 @@ func NewGame(numCultures, width, height int) Game {
 	}
 
 	for i, _ := range ret.Cultures {
-		ret.Cultures[i] = &Culture{}
+		ret.Cultures[i] = &Culture{
+			PlannedHouses: make(map[*House]bool),
+			BuiltHouses:   make(map[*House]bool),
+		}
 	}
 
 	for i, _ := range ret.terrain.Board {
@@ -494,9 +487,25 @@ func AddCharacter(terrain Terrain, culture *Culture,
 	return character, nil
 }
 
-func PlanHouse(terrain Terrain, culture *Culture,
-	htype *HouseType, loc Location) *House {
-	panic("Need to write this function")
+const maxPlansAllowedPerCulture = 255
+
+func PlanHouse(culture *Culture, htype *HouseType, loc Location) *House {
+	if len(culture.PlannedHouses) >= maxPlansAllowedPerCulture {
+		for k, _ := range culture.PlannedHouses {
+			delete(culture.PlannedHouses, k)
+			break
+		}
+	}
+
+	ret := &House{
+		Type:          houseType,
+		Culture:       culture,
+		Location:      loc,
+		ResourcesLeft: 0,
+	}
+
+	culture.PlannedHouses[ret] = true
+	return ret
 }
 
 func Tick(game Game, now time.Time) {

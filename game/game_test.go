@@ -98,6 +98,12 @@ var workerType = &CharacterType{
 	Height:     2,
 }
 
+var houseType = &HouseType{
+	MaxResources: 100,
+	Width:        1,
+	Height:       1,
+}
+
 func TestChooseMoveZeroTime(t *testing.T) {
 	dt0, _ := time.ParseDuration("0ns")
 	choice := chooseMove(loc3x4, loc6x8, 2, dt0)
@@ -338,11 +344,10 @@ func TestAttemptShortMoveObstructed(t *testing.T) {
 	}
 
 	attemptShortMove(walker, game.terrain, Location{6, 6, 0.0, 0.0})
-	expected := Location{2, 6, 0.0, 0.0}
-	if walker.Location != expected {
-		t.Errorf("Unexpected end of obstructed move. expected %v got %v",
-			expected, walker.Location)
+	if walker.Location != loc0x0 {
 		DumpTerrain(game.terrain)
+		t.Errorf("Unexpected end of obstructed move. expected %v got %v",
+			loc0x0, walker.Location)
 	}
 }
 
@@ -380,9 +385,9 @@ func TestAttemptShortMoveWalkAround(t *testing.T) {
 	endpoint := Location{6, 4, 0.0, 0.0}
 	attemptShortMove(walker, game.terrain, endpoint)
 	if walker.Location != endpoint {
+		DumpTerrain(game.terrain)
 		t.Errorf("Unexpected end of walkaround move. expected %v got %v",
 			endpoint, walker.Location)
-		DumpTerrain(game.terrain)
 	}
 }
 
@@ -508,9 +513,83 @@ func TestAttemptMoveLong(t *testing.T) {
 }
 
 func TestAttemptMoveObstructed(t *testing.T) {
-	t.Errorf("Need to write this test")
+	game := NewGame(1, 32, 32)
+	walker, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+
+	for i := 0; i < game.terrain.Height; i = i + workerType.Height {
+		_, err := AddCharacter(
+			game.terrain,
+			game.Cultures[0],
+			workerType,
+			Location{17, i, 0.0, 0.0},
+		)
+
+		if err != nil {
+			t.Fatalf("Can't add blocker character at %d,%d", 4, i)
+		}
+	}
+
+	expected := Location{14, 14, 0.0, 0.0}
+	attemptMove(walker, game.terrain, Location{30, 30, 0.3, 0.4})
+	if walker.Location != expected {
+		DumpTerrain(game.terrain)
+		t.Errorf("long obstructed move unexpected result. expected %v got %v",
+			expected, walker.Location)
+	}
+}
+
+func TestTooManyPlannedHouses(t *testing.T) {
+	game := NewGame(1, 1, 1)
+	for i := 0; i < maxPlansAllowedPerCulture; i++ {
+		PlanHouse(
+			game.Cultures[0],
+			houseType,
+			loc0x0,
+		)
+	}
+
+	if len(game.Cultures[0].PlannedHouses) != maxPlansAllowedPerCulture {
+		t.Fatalf("Tried to plan maxAllowed Houses (%d), planned %d instead",
+			maxPlansAllowedPerCulture, len(game.Cultures[0].PlannedHouses))
+	}
+
+	lastHouse := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		loc0x0,
+	)
+
+	if len(game.Cultures[0].PlannedHouses) != maxPlansAllowedPerCulture {
+		t.Errorf("Adding one to maxAllowed house plans yielded unexpected %d",
+			len(game.Cultures[0].PlannedHouses))
+	}
+
+	if _, ok := game.Cultures[0].PlannedHouses[lastHouse]; !ok {
+		t.Errorf("Couldn't add one last house to a full set of plans")
+	}
 }
 
 func TestInsideOfShadow(t *testing.T) {
 	t.Errorf("Need to write this test")
+}
+
+func TestReevaluatePlannedToBuilt(t *testing.T) {
+	t.Errorf("Need to write this test!")
+}
+
+func TestReevaluateBuiltToDemolished(t *testing.T) {
+	t.Errorf("Need to write this test!")
+}
+
+func TestReevaluatePlannedToComplete(t *testing.T) {
+	t.Errorf("Need to write this test!")
+}
+
+func TestReevaluateBuiltToComplete(t *testing.T) {
+	t.Errorf("Need to write this test!")
 }
