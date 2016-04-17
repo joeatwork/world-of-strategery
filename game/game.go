@@ -11,8 +11,35 @@ import (
 const defaultShadowSize float64 = 1
 
 type Terrain struct {
-	Board         [][]interface{} // TODO serializing?
+	Board         [][]interface{}
 	Width, Height int
+}
+
+func DumpTerrain(terrain Terrain) {
+	chars := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?"
+	nextChar := 0
+	thingToName := make(map[interface{}]string)
+	thingToName[nil] = "-"
+
+	for row := 0; row < terrain.Height; row++ {
+		for col := 0; col < terrain.Width; col++ {
+			obj := terrain.Board[col][row]
+			name, ok := thingToName[obj]
+			if !ok {
+				thingToName[obj] = string(chars[nextChar])
+				if nextChar < len(chars)-1 {
+					nextChar++
+				}
+				name = thingToName[obj]
+			}
+			fmt.Printf("%s", name)
+		}
+		fmt.Printf("\n")
+	}
+
+	for thing, name := range thingToName {
+		fmt.Printf("%s : %v\n", name, thing)
+	}
 }
 
 type Location struct {
@@ -127,8 +154,8 @@ type tilePosition struct {
 	x, y int
 }
 
-// who.Location.X - goal.Location.X must be less than maxShortMoveSide
-// who.Location.Y - goal.Location.Y must be less than maxShortMoveSide
+// abs(who.Location.X - goal.X) must be less than maxShortMoveSide
+// abs(who.Location.Y - goal.Y) must be less than maxShortMoveSide
 //
 // who.Location will not be further away from goal after a call to
 // attemptShortMove
@@ -136,16 +163,19 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 	var marks [maxShortMoveSide][maxShortMoveSide]bool
 	var stack [maxMoveStack]tilePosition
 
+	fmt.Printf("Short Move %v => %v\n", who.Location, goal)
+
 	dx := goal.X - who.Location.X
 	dy := goal.Y - who.Location.Y
 	if dx == 0 && dy == 0 {
-		who.Location = goal // There could be Offset changes here
+		who.Location.OffsetX = goal.OffsetX
+		who.Location.OffsetY = goal.OffsetY
 		return
 	}
-	if dx > maxShortMoveSide || dx < -maxShortMoveSide {
+	if dx >= maxShortMoveSide || dx <= -maxShortMoveSide {
 		panic("attemptShortMove called with X move beyond max size")
 	}
-	if dy > maxShortMoveSide || dy < -maxShortMoveSide {
+	if dy >= maxShortMoveSide || dy <= -maxShortMoveSide {
 		panic("attemptShortMove called with Y move beyond max size")
 	}
 
@@ -169,22 +199,19 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 	marks[who.Location.X-regionOriginX][who.Location.Y-regionOriginY] = true
 	checkAndMark := func(tryX, tryY int) bool {
 		markX := tryX - regionOriginX
-		if markX < 0 || markX > maxShortMoveSide {
-			fmt.Printf("TODO X: %d(%d) outside of (0,%d)\n",
-				markX, tryX, maxShortMoveSide)
+		if markX < 0 || markX >= maxShortMoveSide {
 			return false
 		}
 		markY := tryY - regionOriginY
-		if markY < 0 || markY > maxShortMoveSide {
-			fmt.Printf("TODO Y: %d(%d) outside of (0,%d)\n",
-				markY, tryY, maxShortMoveSide)
+		if markY < 0 || markY >= maxShortMoveSide {
 			return false
 		}
 
-		if marks[markX][markY] {
-			fmt.Printf("TODO Y: %d,%d(%d,%d) is marked\n",
-				markX, markY, tryX, tryY)
+		fmt.Printf("Checking mark %d,%d (loc %d, %d) : ",
+			markX, markY, tryX, tryY)
 
+		if marks[markX][markY] {
+			fmt.Printf("Marked!\n")
 			return false
 		}
 
@@ -198,12 +225,11 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 		)
 
 		if !clear {
-			fmt.Printf("TODO: %d,%d is blocked/out of terrain bounds\n",
-				tryX, tryY)
+			fmt.Printf("not clear!\n")
 			return false
 		}
 
-		fmt.Printf("TODO marking %d,%d(%d,%d)\n", markX, markY, tryX, tryY)
+		fmt.Printf("clear\n")
 		marks[markX][markY] = true
 		return true
 	}
@@ -218,30 +244,32 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location) {
 
 	var current tilePosition
 	for stackDepth > 0 {
-		fmt.Printf("TODO Top of stack[%d] is %v\n", stackDepth, stack[stackDepth-1])
-		stackDepth--
-		current = stack[stackDepth]
+		current = stack[stackDepth-1]
 		if current == goalTile {
 			break
 		}
 
+		fmt.Printf("CURRENT: %v, STACK: %v\n", current, stack[:stackDepth])
+
 		switch {
-		case checkAndMark(current.x-1, current.y):
-			stack[stackDepth].x = current.x - 1
-			stack[stackDepth].y = current.y
-			stackDepth++
 		case checkAndMark(current.x+1, current.y):
 			stack[stackDepth].x = current.x + 1
+			stack[stackDepth].y = current.y
+			stackDepth++
+		case checkAndMark(current.x, current.y+1):
+			stack[stackDepth].x = current.x
+			stack[stackDepth].y = current.y + 1
+			stackDepth++
+		case checkAndMark(current.x-1, current.y):
+			stack[stackDepth].x = current.x - 1
 			stack[stackDepth].y = current.y
 			stackDepth++
 		case checkAndMark(current.x, current.y-1):
 			stack[stackDepth].x = current.x
 			stack[stackDepth].y = current.y - 1
 			stackDepth++
-		case checkAndMark(current.x, current.y+1):
-			stack[stackDepth].x = current.x
-			stack[stackDepth].y = current.y + 1
-			stackDepth++
+		default:
+			stackDepth--
 		}
 	}
 
@@ -295,26 +323,24 @@ func attemptMove(who *Character, terrain Terrain, goal Location) {
 		dx, dy := goal.X-who.Location.X, goal.Y-who.Location.Y
 		nextGoal := goal
 		switch {
-		case dx > maxShortMoveSide:
-			nextGoal.X = who.Location.X + maxShortMoveSide
+		case dx >= maxShortMoveSide:
+			nextGoal.X = who.Location.X + (maxShortMoveSide - 1)
 			nextGoal.OffsetX = 0.0
-		case dx < -maxShortMoveSide:
-			nextGoal.X = who.Location.X - maxShortMoveSide
+		case dx <= -maxShortMoveSide:
+			nextGoal.X = who.Location.X - (maxShortMoveSide + 1)
 			nextGoal.OffsetX = 0.0
 		}
 
 		switch {
 		case dy > maxShortMoveSide:
-			nextGoal.Y = who.Location.Y + maxShortMoveSide
+			nextGoal.Y = who.Location.Y + (maxShortMoveSide - 1)
 			nextGoal.OffsetY = 0.0
 		case dx < -maxShortMoveSide:
-			nextGoal.Y = who.Location.Y - maxShortMoveSide
+			nextGoal.Y = who.Location.Y - (maxShortMoveSide + 1)
 			nextGoal.OffsetY = 0.0
 		}
 
 		start := who.Location
-		fmt.Printf("Attempting short move from %v to %v via %v\n",
-			who.Location, goal, nextGoal)
 		attemptShortMove(who, terrain, nextGoal)
 		if who.Location == start {
 			break
@@ -466,6 +492,11 @@ func AddCharacter(terrain Terrain, culture *Culture,
 	}
 
 	return character, nil
+}
+
+func PlanHouse(terrain Terrain, culture *Culture,
+	htype *HouseType, loc Location) *House {
+	panic("Need to write this function")
 }
 
 func Tick(game Game, now time.Time) {

@@ -315,6 +315,77 @@ func TestAttemptShortMoveOutOfBounds(t *testing.T) {
 	}
 }
 
+func TestAttemptShortMoveObstructed(t *testing.T) {
+	game := NewGame(1, 8, 8)
+	walker, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+
+	for i := 0; i < game.terrain.Height; i = i + workerType.Height {
+		_, err := AddCharacter(
+			game.terrain,
+			game.Cultures[0],
+			workerType,
+			Location{4, i, 0.0, 0.0},
+		)
+
+		if err != nil {
+			t.Fatalf("Can't add blocker character at %d,%d", 4, i)
+		}
+	}
+
+	attemptShortMove(walker, game.terrain, Location{6, 6, 0.0, 0.0})
+	expected := Location{2, 6, 0.0, 0.0}
+	if walker.Location != expected {
+		t.Errorf("Unexpected end of obstructed move. expected %v got %v",
+			expected, walker.Location)
+		DumpTerrain(game.terrain)
+	}
+}
+
+func TestAttemptShortMoveWalkAround(t *testing.T) {
+	game := NewGame(1, 8, 8)
+	walker, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{0, 4, 0.0, 0.0},
+	)
+
+	// Blockers
+	AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{4, 4, 0.0, 0.0},
+	)
+
+	AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{4, 2, 0.0, 0.0},
+	)
+
+	AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{4, 6, 0.0, 0.0},
+	)
+
+	endpoint := Location{6, 4, 0.0, 0.0}
+	attemptShortMove(walker, game.terrain, endpoint)
+	if walker.Location != endpoint {
+		t.Errorf("Unexpected end of walkaround move. expected %v got %v",
+			endpoint, walker.Location)
+		DumpTerrain(game.terrain)
+	}
+}
+
 func TestAttemptMoveHappyPath(t *testing.T) {
 	twidth := 4
 	theight := 4
