@@ -155,7 +155,13 @@ func TestChooseMoveYOnly(t *testing.T) {
 func TestAddCharacterSimple(t *testing.T) {
 	game := NewGame(1, 4, 4)
 
-	character, err := AddCharacter(game.terrain, game.Cultures[0], workerType, loc1x1)
+	character, err := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc1x1,
+	)
+
 	if err != nil {
 		t.Errorf("unexpected error adding character: %v", err)
 	}
@@ -605,18 +611,207 @@ func TestInsideOfShadow(t *testing.T) {
 
 }
 
-func TestReevaluatePlannedToBuilt(t *testing.T) {
+func TestRerankPlannedToBuilt(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	house.ResourcesLeft = house.ResourcesLeft + 1
+	rerankHouse(game.terrain, house)
+
+	if _, planned := game.Cultures[0].PlannedHouses[house]; planned {
+		t.Errorf("Planned house with positive resources still planned")
+	}
+
+	if _, built := game.Cultures[0].BuiltHouses[house]; !built {
+		t.Errorf("Planned house with positive resources not built")
+	}
+
+	for x, column := range game.terrain.Board {
+		expectX := x >= house.Location.X && x < house.Location.X+house.Type.Width
+		for y, obj := range column {
+			expectY := y >= house.Location.Y && y < house.Location.Y+house.Type.Height
+			if (obj == house) != (expectX && expectY) {
+				t.Errorf("House built == %v at strange location %d,%d",
+					obj == house, x, y)
+			}
+		}
+	}
+}
+
+func TestRerankBuiltToDemolished(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	house.ResourcesLeft = house.ResourcesLeft + 1
+	rerankHouse(game.terrain, house)
+	house.ResourcesLeft = 0
+	rerankHouse(game.terrain, house)
+
+	if _, planned := game.Cultures[0].PlannedHouses[house]; planned {
+		t.Errorf("Demolished house still planned")
+	}
+
+	if _, built := game.Cultures[0].BuiltHouses[house]; built {
+		t.Errorf("Demolished house still built")
+	}
+
+	for x, column := range game.terrain.Board {
+		for y, obj := range column {
+			if obj == house {
+				t.Errorf("house zombie at %d,%d", x, y)
+			}
+		}
+	}
+}
+
+func TestReevaluateBuildOk(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	character.Carrying = character.Type.MaxCarry
+	character.Target = house
+
+	reevaluateTargetHouse(character)
+	if character.Target != house {
+		t.Errorf("Character lost interest in building for no reason")
+	}
+}
+
+func TestReevaluateMineOk(t *testing.T) {
+	game := NewGame(2, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[1],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	house.ResourcesLeft = house.Type.MaxResources
+	character.Target = house
+
+	reevaluateTargetHouse(character)
+	if character.Target != house {
+		t.Errorf("Character lost interest in building for no reason")
+	}
+}
+
+func TestReevaluateBuildComplete(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	character.Carrying = character.Type.MaxCarry
+	house.ResourcesLeft = house.Type.MaxResources
+	character.Target = house
+
+	reevaluateTargetHouse(character)
+	if character.Target != nil {
+		t.Errorf("Character still trying to build completed structure")
+	}
+}
+
+func TestReevaluateOutOfBuildResources(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	character.Carrying = 0
+	character.Target = house
+
+	reevaluateTargetHouse(character)
+	if character.Target != nil {
+		t.Errorf("Character still trying to build with no resources")
+	}
+}
+
+func TestReevaluateOutOfCarryCapacity(t *testing.T) {
+	game := NewGame(2, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[1],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	house.ResourcesLeft = house.Type.MaxResources
+	character.Target = house
+	character.Carrying = character.Type.MaxCarry
+
+	reevaluateTargetHouse(character)
+	if character.Target != nil {
+		t.Errorf("Character still trying to mine without carrying capacity")
+	}
+}
+
+func TestReevaluateHouseDemolished(t *testing.T) {
+	game := NewGame(1, 16, 16)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0, 0.0},
+	)
+	character.Carrying = character.Type.MaxCarry
+	character.Target = house
+	UnplanHouse(house)
+	reevaluateTargetHouse(character)
+	if character.Target != nil {
+		t.Errorf("Character still trying to build demolished house")
+	}
+}
+
+func TestMine(t *testing.T) {
 	t.Errorf("Need to write this test!")
 }
 
-func TestReevaluateBuiltToDemolished(t *testing.T) {
+func TestBuild(t *testing.T) {
 	t.Errorf("Need to write this test!")
 }
 
-func TestReevaluatePlannedToComplete(t *testing.T) {
-	t.Errorf("Need to write this test!")
-}
-
-func TestReevaluateBuiltToComplete(t *testing.T) {
+func TestBuildObstructed(t *testing.T) {
 	t.Errorf("Need to write this test!")
 }

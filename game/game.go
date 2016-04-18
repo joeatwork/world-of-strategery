@@ -374,7 +374,22 @@ func mine(who *Character, target *House, dt time.Duration) {
 	who.Carrying = who.Carrying + transfer
 }
 
-func build(who *Character, target *House, dt time.Duration) {
+func build(terrain Terrain, who *Character, target *House, dt time.Duration) {
+	if _, built := target.Culture.BuiltHouses[target]; !built {
+		// You can't build a house if it's position is obstructed.
+		clear := isTerrainClear(
+			target,
+			terrain,
+			target.Location.X,
+			target.Location.Y,
+			target.Type.Width,
+			target.Type.Height,
+		)
+		if !clear {
+			return
+		}
+	}
+
 	transfer := who.Type.WorkPerSec * dt.Seconds()
 
 	if transfer > target.Type.MaxResources-target.ResourcesLeft {
@@ -388,9 +403,29 @@ func build(who *Character, target *House, dt time.Duration) {
 	who.Carrying = who.Carrying - transfer
 }
 
-func rerankHouse(house *House) {
+func rerankHouse(terrain Terrain, house *House) {
 	if house.ResourcesLeft == 0 {
 		delete(house.Culture.BuiltHouses, house)
+		for x := 0; x < house.Type.Width; x++ {
+			for y := 0; y < house.Type.Height; y++ {
+				oldX := house.Location.X + x
+				oldY := house.Location.Y + y
+				terrain.Board[oldX][oldY] = nil
+			}
+		}
+	}
+
+	_, planned := house.Culture.PlannedHouses[house]
+	if house.ResourcesLeft > 0 && planned {
+		delete(house.Culture.PlannedHouses, house)
+		house.Culture.BuiltHouses[house] = true
+		for x := 0; x < house.Type.Width; x++ {
+			for y := 0; y < house.Type.Height; y++ {
+				newX := house.Location.X + x
+				newY := house.Location.Y + y
+				terrain.Board[newX][newY] = house
+			}
+		}
 	}
 }
 
@@ -508,6 +543,10 @@ func PlanHouse(culture *Culture, htype *HouseType, loc Location) *House {
 	return ret
 }
 
+func UnplanHouse(house *House) {
+	delete(house.Culture.PlannedHouses, house)
+}
+
 func Tick(game Game, now time.Time) {
 	if game.lastUpdate.IsZero() {
 		game.lastUpdate = now
@@ -533,11 +572,11 @@ func Tick(game Game, now time.Time) {
 			case *House:
 				if insideOfShadow(defaultShadowSize, who, target) {
 					if who.Culture == target.Culture {
-						build(who, target, dt)
+						build(game.terrain, who, target, dt)
 					} else {
 						mine(who, target, dt)
 					}
-					rerankHouse(target)
+					rerankHouse(game.terrain, target)
 				} else {
 					targetX, targetY := FloatsFromLocation(target.Location)
 					workTarget := LocationFromFloats(
