@@ -575,7 +575,34 @@ func TestTooManyPlannedHouses(t *testing.T) {
 }
 
 func TestInsideOfShadow(t *testing.T) {
-	t.Errorf("Need to write this test")
+	width, height := 16, 16
+	for x := 0; x+workerType.Width < width; x++ {
+		for y := 0; y+workerType.Height < height; y++ {
+			game := NewGame(1, width, height)
+			house := PlanHouse(
+				game.Cultures[0],
+				houseType,
+				Location{4, 4, 0.0, 0.0},
+			)
+
+			character, _ := AddCharacter(
+				game.terrain,
+				game.Cultures[0],
+				workerType,
+				Location{x, y, 0.0, 0.0},
+			)
+
+			xShadow := x >= 2 && x < 6
+			yShadow := y >= 2 && y < 6
+			shadow := xShadow && yShadow
+
+			if insideOfShadow(1, character, house) != shadow {
+				t.Errorf("Wanted insideOfShadow(%v) to be %v but it wasn't",
+					character.Location, shadow)
+			}
+		}
+	}
+
 }
 
 func TestReevaluatePlannedToBuilt(t *testing.T) {
