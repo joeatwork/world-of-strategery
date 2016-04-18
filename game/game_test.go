@@ -92,8 +92,8 @@ var loc6x8 = Location{
 
 var workerType = &CharacterType{
 	MovePerSec: 1,
-	WorkPerSec: 1,
-	MaxCarry:   2,
+	WorkPerSec: 4,
+	MaxCarry:   10,
 	Width:      2,
 	Height:     2,
 }
@@ -164,6 +164,19 @@ func TestAddCharacterSimple(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("unexpected error adding character: %v", err)
+	}
+
+	found := false
+	for e := game.Cultures[0].Characters.Front(); e != nil; e = e.Next() {
+		chr := e.Value.(*Character)
+		found = character == chr
+		if found {
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("adding character didn't add to list")
 	}
 
 	for x := 0; x < game.terrain.Width; x++ {
@@ -802,16 +815,4 @@ func TestReevaluateHouseDemolished(t *testing.T) {
 	if character.Target != nil {
 		t.Errorf("Character still trying to build demolished house")
 	}
-}
-
-func TestMine(t *testing.T) {
-	t.Errorf("Need to write this test!")
-}
-
-func TestBuild(t *testing.T) {
-	t.Errorf("Need to write this test!")
-}
-
-func TestBuildObstructed(t *testing.T) {
-	t.Errorf("Need to write this test!")
 }

@@ -457,7 +457,7 @@ abandon:
 	return
 }
 
-func NewGame(numCultures, width, height int) Game {
+func NewGame(numCultures, width, height int) *Game {
 	ret := Game{
 		Cultures: make([]*Culture, numCultures),
 		terrain: Terrain{
@@ -478,7 +478,7 @@ func NewGame(numCultures, width, height int) Game {
 		ret.terrain.Board[i] = make([]interface{}, ret.terrain.Height)
 	}
 
-	return ret
+	return &ret
 }
 
 type CantPlaceCharacterError struct {
@@ -489,6 +489,7 @@ func (e *CantPlaceCharacterError) Error() string {
 	return e.msg
 }
 
+// TODO can't call this with private terrain!?
 func AddCharacter(terrain Terrain, culture *Culture,
 	ctype *CharacterType, loc Location) (*Character, *CantPlaceCharacterError) {
 	positionClear := isTerrainClear(
@@ -519,6 +520,7 @@ func AddCharacter(terrain Terrain, culture *Culture,
 		}
 	}
 
+	culture.Characters.PushBack(character)
 	return character, nil
 }
 
@@ -547,7 +549,7 @@ func UnplanHouse(house *House) {
 	delete(house.Culture.PlannedHouses, house)
 }
 
-func Tick(game Game, now time.Time) {
+func Tick(game *Game, now time.Time) {
 	if game.lastUpdate.IsZero() {
 		game.lastUpdate = now
 		return
@@ -569,12 +571,16 @@ func Tick(game Game, now time.Time) {
 					dt,
 				)
 				attemptMove(who, game.terrain, choice)
+				fmt.Printf("TODO attempting move to location %v : %v (ended %v)\n",
+					target, choice, who.Location)
 			case *House:
 				if insideOfShadow(defaultShadowSize, who, target) {
 					if who.Culture == target.Culture {
 						build(game.terrain, who, target, dt)
+						fmt.Printf("TODO attempting build\n")
 					} else {
 						mine(who, target, dt)
+						fmt.Printf("TODO attempting mine\n")
 					}
 					rerankHouse(game.terrain, target)
 				} else {
@@ -590,6 +596,8 @@ func Tick(game Game, now time.Time) {
 						dt,
 					)
 					attemptMove(who, game.terrain, choice)
+					fmt.Printf("TODO attempting move to house %v : %v (ended %v)\n",
+						target, choice, who.Location)
 				}
 				reevaluateTargetHouse(who)
 			case nil:
