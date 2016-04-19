@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"time"
 )
 
 const defaultShadowSize float64 = 1
@@ -21,8 +20,8 @@ type Location struct {
 }
 
 type CharacterType struct {
-	MovePerSec, WorkPerSec, MaxCarry float64
-	Width, Height                    int
+	MovePerTick, WorkPerTick, MaxCarry float64
+	Width, Height                      int
 }
 
 type Character struct {
@@ -52,9 +51,8 @@ type Culture struct {
 }
 
 type Game struct {
-	Cultures   []*Culture
-	lastUpdate time.Time
-	terrain    Terrain
+	Cultures []*Culture
+	terrain  Terrain
 }
 
 func DumpTerrain(terrain Terrain) {
@@ -99,10 +97,10 @@ func LocationFromFloats(x, y float64) Location {
 	}
 }
 
+// TODO this doesn't actually work!
 // Propose a new location given an origin, target, speed and duration.
 // return value is an absolute location
-func chooseMove(from Location, to Location,
-	speedPerSec float64, dt time.Duration) Location {
+func chooseMove(from Location, to Location, speedPerTick float64, dt float64) Location {
 	if dt == 0 {
 		return from
 	}
@@ -112,7 +110,7 @@ func chooseMove(from Location, to Location,
 	deltaX := toX - fromX
 	deltaY := toY - fromY
 	wholeJourneyDist := math.Hypot(deltaX, deltaY)
-	canMoveDist := speedPerSec / dt.Seconds()
+	canMoveDist := speedPerTick / dt
 	canMovePortion := canMoveDist / wholeJourneyDist
 	if canMovePortion > 1.0 {
 		canMovePortion = 1.0
@@ -359,8 +357,8 @@ func insideOfShadow(shadowSize float64, who *Character, target *House) bool {
 	return false
 }
 
-func mine(who *Character, target *House, dt time.Duration) {
-	transfer := who.Type.WorkPerSec * dt.Seconds()
+func mine(who *Character, target *House, dt float64) {
+	transfer := who.Type.WorkPerTick * dt
 
 	// Mining
 	if transfer > target.ResourcesLeft {
@@ -374,7 +372,7 @@ func mine(who *Character, target *House, dt time.Duration) {
 	who.Carrying = who.Carrying + transfer
 }
 
-func build(terrain Terrain, who *Character, target *House, dt time.Duration) {
+func build(terrain Terrain, who *Character, target *House, dt float64) {
 	if _, built := target.Culture.BuiltHouses[target]; !built {
 		// You can't build a house if it's position is obstructed.
 		clear := isTerrainClear(
@@ -390,7 +388,7 @@ func build(terrain Terrain, who *Character, target *House, dt time.Duration) {
 		}
 	}
 
-	transfer := who.Type.WorkPerSec * dt.Seconds()
+	transfer := who.Type.WorkPerTick * dt
 
 	if transfer > target.Type.MaxResources-target.ResourcesLeft {
 		transfer = target.Type.MaxResources - target.ResourcesLeft
@@ -549,14 +547,7 @@ func UnplanHouse(house *House) {
 	delete(house.Culture.PlannedHouses, house)
 }
 
-func Tick(game *Game, now time.Time) {
-	if game.lastUpdate.IsZero() {
-		game.lastUpdate = now
-		return
-	}
-
-	dt := now.Sub(game.lastUpdate)
-
+func Tick(game *Game, dt float64) {
 	// TODO shouldn't iterate by culture, or one team gets to move
 	// before the other
 	for _, culture := range game.Cultures {
@@ -567,17 +558,17 @@ func Tick(game *Game, now time.Time) {
 				choice := chooseMove(
 					who.Location,
 					*target,
-					who.Type.MovePerSec,
+					who.Type.MovePerTick,
 					dt,
 				)
+				TODO_Old_location := who.Location
 				attemptMove(who, game.terrain, choice)
-				fmt.Printf("TODO attempting move to location %v : %v (ended %v)\n",
-					target, choice, who.Location)
+				fmt.Printf("TODO attempting move %v => %v via %v (ended %v)\n",
+					TODO_Old_location, target, choice, who.Location)
 			case *House:
 				if insideOfShadow(defaultShadowSize, who, target) {
 					if who.Culture == target.Culture {
 						build(game.terrain, who, target, dt)
-						fmt.Printf("TODO attempting build\n")
 					} else {
 						mine(who, target, dt)
 						fmt.Printf("TODO attempting mine\n")
@@ -592,7 +583,7 @@ func Tick(game *Game, now time.Time) {
 					choice := chooseMove(
 						who.Location,
 						workTarget,
-						who.Type.MovePerSec,
+						who.Type.MovePerTick,
 						dt,
 					)
 					attemptMove(who, game.terrain, choice)
@@ -607,6 +598,4 @@ func Tick(game *Game, now time.Time) {
 			}
 		}
 	}
-
-	game.lastUpdate = now
 }

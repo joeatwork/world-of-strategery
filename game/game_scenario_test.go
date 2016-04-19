@@ -2,7 +2,6 @@ package game
 
 import (
 	"testing"
-	"time"
 )
 
 func TestBuildAndMine(t *testing.T) {
@@ -33,11 +32,8 @@ func TestBuildAndMine(t *testing.T) {
 		DumpTerrain(game.terrain)
 		t.Fatalf("can't place green for BuildAndMine scenario: %v", err)
 	}
-	nextTime := time.Now()
-	Tick(game, nextTime)
 
 	for redHouse.ResourcesLeft < redHouse.Type.MaxResources {
-		nextTime = nextTime.Add(2 * time.Second)
 		if red.Carrying == 0 {
 			red.Carrying = red.Type.MaxCarry
 			red.Target = redHouse
@@ -46,7 +42,7 @@ func TestBuildAndMine(t *testing.T) {
 		carryingBefore := red.Carrying
 		locBefore := red.Location
 
-		Tick(game, nextTime)
+		Tick(game, 1)
 
 		if carryingBefore == red.Carrying && locBefore == red.Location {
 			DumpTerrain(game.terrain)
@@ -60,10 +56,8 @@ func TestBuildAndMine(t *testing.T) {
 
 	red.Target = &Location{2, 2, 0.0, 0.0}
 	for *red.Target.(*Location) != red.Location {
-		nextTime = nextTime.Add(2 * time.Second)
-
 		locBefore := red.Location
-		Tick(game, nextTime)
+		Tick(game, 1)
 
 		if locBefore == red.Location {
 			DumpTerrain(game.terrain)
@@ -74,11 +68,10 @@ func TestBuildAndMine(t *testing.T) {
 
 	green.Target = redHouse
 	for green.Carrying < green.Type.MaxCarry {
-		nextTime = nextTime.Add(2 * time.Second)
 		carryingBefore := green.Carrying
 		locBefore := green.Location
 
-		Tick(game, nextTime)
+		Tick(game, 1)
 
 		if carryingBefore == green.Carrying && locBefore == green.Location {
 			DumpTerrain(game.terrain)

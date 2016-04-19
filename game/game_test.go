@@ -3,7 +3,6 @@ package game
 import (
 	"math"
 	"testing"
-	"time"
 )
 
 var loc0x0 = Location{
@@ -91,11 +90,11 @@ var loc6x8 = Location{
 }
 
 var workerType = &CharacterType{
-	MovePerSec: 1,
-	WorkPerSec: 4,
-	MaxCarry:   10,
-	Width:      2,
-	Height:     2,
+	MovePerTick: 1,
+	WorkPerTick: 4,
+	MaxCarry:    10,
+	Width:       2,
+	Height:      2,
 }
 
 var houseType = &HouseType{
@@ -105,48 +104,42 @@ var houseType = &HouseType{
 }
 
 func TestChooseMoveZeroTime(t *testing.T) {
-	dt0, _ := time.ParseDuration("0ns")
-	choice := chooseMove(loc3x4, loc6x8, 2, dt0)
+	choice := chooseMove(loc3x4, loc6x8, 2, 0.0)
 	if choice != loc3x4 {
 		t.Errorf("expected no motion, got %v", choice)
 	}
 }
 
 func TestChooseMovePositive(t *testing.T) {
-	dt, _ := time.ParseDuration("1s")
-	choice := chooseMove(loc0x0, loc6x8, 5, dt)
+	choice := chooseMove(loc0x0, loc6x8, 5, 1)
 	if choice != loc3x4 {
 		t.Errorf("expected %v, got %v", loc3x4, choice)
 	}
 }
 
 func TestChooseMoveNegative(t *testing.T) {
-	dt, _ := time.ParseDuration("1s")
-	choice := chooseMove(loc6x8, loc0x0, 5, dt)
+	choice := chooseMove(loc6x8, loc0x0, 5, 1)
 	if choice != loc3x4 {
 		t.Errorf("expected %v, got %v", loc3x4, choice)
 	}
 }
 
 func TestChooseMoveOvershot(t *testing.T) {
-	dt, _ := time.ParseDuration("1s")
-	choice := chooseMove(loc0x0, loc3x4, 10, dt)
+	choice := chooseMove(loc0x0, loc3x4, 10, 1)
 	if choice != loc3x4 {
 		t.Errorf("expected %v, got %v", loc3x4, choice)
 	}
 }
 
 func TestChooseMoveXOnly(t *testing.T) {
-	dt, _ := time.ParseDuration("1s")
-	choice := chooseMove(loc0x0, loc3x0, 3, dt)
+	choice := chooseMove(loc0x0, loc3x0, 3, 1)
 	if choice != loc3x0 {
 		t.Errorf("expected %v, got %v", loc3x0, choice)
 	}
 }
 
 func TestChooseMoveYOnly(t *testing.T) {
-	dt, _ := time.ParseDuration("1s")
-	choice := chooseMove(loc0x0, loc0x4, 4, dt)
+	choice := chooseMove(loc0x0, loc0x4, 4, 1)
 	if choice != loc0x4 {
 		t.Errorf("expected %v, got %v", loc0x4, choice)
 	}
@@ -407,6 +400,40 @@ func TestAttemptShortMoveWalkAround(t *testing.T) {
 		DumpTerrain(game.terrain)
 		t.Errorf("Unexpected end of walkaround move. expected %v got %v",
 			endpoint, walker.Location)
+	}
+}
+
+func TestAttemptShortMoveTightCorner(t *testing.T) {
+	game := NewGame(2, 4, 4)
+	mover, err := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{1, 0, 0.0, 0.0},
+	)
+	if err != nil {
+		DumpTerrain(game.terrain)
+		t.Fatalf("can't place mover for BuildAndMine scenario: %v", err)
+	}
+
+	_, err = AddCharacter(
+		game.terrain,
+		game.Cultures[1],
+		workerType,
+		Location{0, 2, 0.0, 0.0},
+	)
+	if err != nil {
+		DumpTerrain(game.terrain)
+		t.Fatalf("can't place obstructor for BuildAndMine scenario: %v", err)
+	}
+
+	target := Location{2, 2, 0.0, 0.0}
+	attemptShortMove(mover, game.terrain, target)
+
+	if mover.Location != target {
+		DumpTerrain(game.terrain)
+		t.Errorf("Can't corner from %v to %v",
+			mover.Location, target)
 	}
 }
 
