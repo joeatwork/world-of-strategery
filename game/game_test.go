@@ -103,45 +103,48 @@ var houseType = &HouseType{
 	Height:       1,
 }
 
-func TestChooseMoveZeroTime(t *testing.T) {
-	choice := chooseMove(loc3x4, loc6x8, 2, 0.0)
-	if choice != loc3x4 {
-		t.Errorf("expected no motion, got %v", choice)
+func TestAttemptMoveZeroDistance(t *testing.T) {
+	game := NewGame(1, 10, 10)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	attemptMove(character, game.terrain, loc6x8, 0.0)
+
+	if character.Location != loc0x0 {
+		t.Errorf("expected no motion, got %v => %v", loc0x0, character.Location)
 	}
 }
 
 func TestChooseMovePositive(t *testing.T) {
-	choice := chooseMove(loc0x0, loc6x8, 5, 1)
-	if choice != loc3x4 {
-		t.Errorf("expected %v, got %v", loc3x4, choice)
+	game := NewGame(1, 10, 10)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	attemptMove(character, game.terrain, loc6x8, 20.0)
+
+	if character.Location != loc6x8 {
+		t.Errorf("expected %v, got %v", loc6x8, character.Location)
 	}
 }
 
 func TestChooseMoveNegative(t *testing.T) {
-	choice := chooseMove(loc6x8, loc0x0, 5, 1)
-	if choice != loc3x4 {
-		t.Errorf("expected %v, got %v", loc3x4, choice)
-	}
-}
+	game := NewGame(1, 10, 10)
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc6x8,
+	)
+	attemptMove(character, game.terrain, loc0x0, 20.0)
 
-func TestChooseMoveOvershot(t *testing.T) {
-	choice := chooseMove(loc0x0, loc3x4, 10, 1)
-	if choice != loc3x4 {
-		t.Errorf("expected %v, got %v", loc3x4, choice)
-	}
-}
-
-func TestChooseMoveXOnly(t *testing.T) {
-	choice := chooseMove(loc0x0, loc3x0, 3, 1)
-	if choice != loc3x0 {
-		t.Errorf("expected %v, got %v", loc3x0, choice)
-	}
-}
-
-func TestChooseMoveYOnly(t *testing.T) {
-	choice := chooseMove(loc0x0, loc0x4, 4, 1)
-	if choice != loc0x4 {
-		t.Errorf("expected %v, got %v", loc0x4, choice)
+	if character.Location != loc0x0 {
+		t.Errorf("expected %v, got %v", loc0x0, character.Location)
 	}
 }
 
@@ -292,7 +295,7 @@ func TestAttemptShortMoveHappyPath(t *testing.T) {
 		loc0x0,
 	)
 
-	attemptShortMove(character, game.terrain, loc2x2)
+	attemptShortMove(character, game.terrain, loc2x2, 20)
 	if character.Location != loc2x2 {
 		t.Errorf("expected move to %v got %v", loc2x2, character.Location)
 	}
@@ -320,7 +323,7 @@ func TestAttemptShortMoveOutOfBounds(t *testing.T) {
 			workerType,
 			loc0x0,
 		)
-		attemptShortMove(character, game.terrain, loc)
+		attemptShortMove(character, game.terrain, loc, 20)
 		goalX, goalY := FloatsFromLocation(loc)
 		atX, atY := FloatsFromLocation(character.Location)
 		oldDist := math.Hypot(goalX, goalY)
@@ -355,7 +358,7 @@ func TestAttemptShortMoveObstructed(t *testing.T) {
 		}
 	}
 
-	attemptShortMove(walker, game.terrain, Location{6, 6, 0.0, 0.0})
+	attemptShortMove(walker, game.terrain, Location{6, 6, 0.0, 0.0}, 20)
 	if walker.Location != loc0x0 {
 		DumpTerrain(game.terrain)
 		t.Errorf("Unexpected end of obstructed move. expected %v got %v",
@@ -395,7 +398,7 @@ func TestAttemptShortMoveWalkAround(t *testing.T) {
 	)
 
 	endpoint := Location{6, 4, 0.0, 0.0}
-	attemptShortMove(walker, game.terrain, endpoint)
+	attemptShortMove(walker, game.terrain, endpoint, 20)
 	if walker.Location != endpoint {
 		DumpTerrain(game.terrain)
 		t.Errorf("Unexpected end of walkaround move. expected %v got %v",
@@ -428,13 +431,21 @@ func TestAttemptShortMoveTightCorner(t *testing.T) {
 	}
 
 	target := Location{2, 2, 0.0, 0.0}
-	attemptShortMove(mover, game.terrain, target)
+	attemptShortMove(mover, game.terrain, target, 20)
 
 	if mover.Location != target {
 		DumpTerrain(game.terrain)
 		t.Errorf("Can't corner from %v to %v",
 			mover.Location, target)
 	}
+}
+
+func TestAttemptShortMoveOutOfSteps(t *testing.T) {
+	t.Errorf("Need to write this test")
+}
+
+func TestAttemptShortMoveZeroSteps(t *testing.T) {
+	t.Errorf("Need to write this test")
 }
 
 func TestAttemptMoveHappyPath(t *testing.T) {
@@ -450,7 +461,7 @@ func TestAttemptMoveHappyPath(t *testing.T) {
 				loc0x0,
 			)
 			attempt := Location{x, y, 0.0, 0.0}
-			attemptMove(character, game.terrain, attempt)
+			attemptMove(character, game.terrain, attempt, 20)
 
 			if character.Location != attempt {
 				t.Errorf("Unobstructed move to %v failed", attempt)
@@ -504,7 +515,7 @@ func TestAttemptMoveOutOfBounds(t *testing.T) {
 			workerType,
 			loc0x0,
 		)
-		attemptMove(character, game.terrain, loc)
+		attemptMove(character, game.terrain, loc, 20)
 		goalX, goalY := FloatsFromLocation(loc)
 		atX, atY := FloatsFromLocation(character.Location)
 		oldDist := math.Hypot(goalX, goalY)
@@ -534,7 +545,7 @@ func TestAttemptMoveNonzeroOffset(t *testing.T) {
 			workerType,
 			Location{0, 0, 0.1, 0.9},
 		)
-		attemptMove(character, game.terrain, pair.attempt)
+		attemptMove(character, game.terrain, pair.attempt, 20)
 		if character.Location != pair.expect {
 			t.Errorf("nonzero offset move failed, expected %v got %v",
 				pair.expect, character.Location)
@@ -551,7 +562,7 @@ func TestAttemptMoveLong(t *testing.T) {
 		Location{0, 0, 0, 0},
 	)
 	target := Location{14, 14, 0.7, 0.9}
-	attemptMove(character, game.terrain, target)
+	attemptMove(character, game.terrain, target, 20)
 	if character.Location != target {
 		t.Errorf("long move failed: expected %v got %v",
 			target, character.Location)
@@ -581,7 +592,7 @@ func TestAttemptMoveObstructed(t *testing.T) {
 	}
 
 	expected := Location{14, 14, 0.0, 0.0}
-	attemptMove(walker, game.terrain, Location{30, 30, 0.3, 0.4})
+	attemptMove(walker, game.terrain, Location{30, 30, 0.3, 0.4}, 20)
 	if walker.Location != expected {
 		DumpTerrain(game.terrain)
 		t.Errorf("long obstructed move unexpected result. expected %v got %v",
