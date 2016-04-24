@@ -15,7 +15,7 @@ func TestBuildAndMine(t *testing.T) {
 		game.terrain,
 		game.Cultures[0],
 		workerType,
-		Location{2, 0, 0.0, 0.0},
+		Location{2, 0, 0.0},
 	)
 	if err != nil {
 		DumpTerrain(game.terrain)
@@ -26,7 +26,7 @@ func TestBuildAndMine(t *testing.T) {
 		game.terrain,
 		game.Cultures[1],
 		workerType,
-		Location{0, 2, 0.0, 0.0},
+		Location{0, 2, 0.0},
 	)
 	if err != nil {
 		DumpTerrain(game.terrain)
@@ -54,7 +54,7 @@ func TestBuildAndMine(t *testing.T) {
 		t.Errorf("Red failed to reevaluate after building red house")
 	}
 
-	red.Target = &Location{2, 2, 0.0, 0.0}
+	red.Target = &Location{2, 2, 0.0}
 	for *red.Target.(*Location) != red.Location {
 		locBefore := red.Location
 		Tick(game, 1)

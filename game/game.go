@@ -7,7 +7,7 @@ import (
 	"math"
 )
 
-const defaultShadowSize float64 = 1
+const defaultShadowSize = 1
 
 type Terrain struct {
 	Board         [][]interface{}
@@ -15,8 +15,8 @@ type Terrain struct {
 }
 
 type Location struct {
-	X, Y             int
-	OffsetX, OffsetY float64
+	X, Y   int
+	Offset float64
 }
 
 type CharacterType struct {
@@ -83,21 +83,6 @@ func DumpTerrain(terrain Terrain) {
 	}
 }
 
-func FloatsFromLocation(l Location) (float64, float64) {
-	return float64(l.X) + l.OffsetX, float64(l.Y) + l.OffsetY
-}
-
-func LocationFromFloats(x, y float64) Location {
-	xf, offsetX := math.Modf(x)
-	yf, offsetY := math.Modf(y)
-	return Location{
-		X:       int(xf),
-		Y:       int(yf),
-		OffsetX: offsetX,
-		OffsetY: offsetY,
-	}
-}
-
 func isTerrainClear(who interface{}, terrain Terrain, x, y, width, height int) bool {
 	if x < 0 || x+width > terrain.Width {
 		return false
@@ -105,6 +90,7 @@ func isTerrainClear(who interface{}, terrain Terrain, x, y, width, height int) b
 	if y < 0 || y+height > terrain.Height {
 		return false
 	}
+
 	for checkX := 0; checkX < width; checkX++ {
 		for checkY := 0; checkY < height; checkY++ {
 			tryX, tryY := x+checkX, y+checkY
@@ -118,150 +104,162 @@ func isTerrainClear(who interface{}, terrain Terrain, x, y, width, height int) b
 	return true
 }
 
-const maxMoveStack = 64
-const maxShortMoveSide = 8
+const maxShortMoveSide = 8 // maxShortMoveSide must be less than sqrt MAX_INT
+const maxPathLength = maxShortMoveSide * maxShortMoveSide
 
-type tilePosition struct {
+type tile struct {
 	x, y int
 }
 
-// abs(who.Location.X - goal.X) must be less than maxShortMoveSide
-// abs(who.Location.Y - goal.Y) must be less than maxShortMoveSide
-// maxWalk must be non-negative
-//
-// who.Location will not be further away from goal after a call to
-// attemptShortMove
-func attemptShortMove(who *Character, terrain Terrain, goal Location, maxSteps int) int {
-	// TODO waaaayyyyy too complex and crazy. Clean up, factor down.
-	var marks [maxShortMoveSide][maxShortMoveSide]bool
-	var stack [maxMoveStack]tilePosition
+type marks struct {
+	m                  [maxShortMoveSide][maxShortMoveSide]bool
+	oX, oY, dirX, dirY int
+}
 
-	dx := goal.X - who.Location.X
-	dy := goal.Y - who.Location.Y
-	if dx == 0 && dy == 0 {
-		who.Location.OffsetX = goal.OffsetX
-		who.Location.OffsetY = goal.OffsetY
-		return 0
-	}
-	if dx >= maxShortMoveSide || dx <= -maxShortMoveSide {
-		panic("attemptShortMove called with X move beyond max size")
-	}
-	if dy >= maxShortMoveSide || dy <= -maxShortMoveSide {
-		panic("attemptShortMove called with Y move beyond max size")
-	}
+func distSquared(a, b tile) int {
+	dx, dy := a.x-b.x, a.y-b.y
+	return dx*dx + dy*dy
+}
 
-	var regionOriginX int
-	var regionOriginY int
-	if dx < 0 {
-		marginX := (maxShortMoveSide + dx) / 2
-		regionOriginX = goal.X - marginX
-	} else {
-		marginX := (maxShortMoveSide - dx) / 2
-		regionOriginX = who.Location.X - marginX
+func writeMark(m *marks, t tile) {
+	markX := (t.x - m.oX) * m.dirX
+	markY := (t.y - m.oY) * m.dirY
+	m.m[markX][markY] = true
+}
+
+func checkMove(who *Character, terrain Terrain, m *marks, x, y int) bool {
+	markX := (x - m.oX) * m.dirX
+	markY := (y - m.oY) * m.dirY
+
+	if x < 0 || x > terrain.Width {
+		return false
 	}
-	if dy < 0 {
-		marginY := (maxShortMoveSide + dy) / 2
-		regionOriginY = goal.Y - marginY
-	} else {
-		marginY := (maxShortMoveSide - dy) / 2
-		regionOriginY = who.Location.Y - marginY
+	if y < 0 || y > terrain.Height {
+		return false
+	}
+	if markX < 0 || markX >= maxShortMoveSide {
+		return false
+	}
+	if markY < 0 || markY >= maxShortMoveSide {
+		return false
+	}
+	if m.m[markX][markY] {
+		return false
 	}
 
-	marks[who.Location.X-regionOriginX][who.Location.Y-regionOriginY] = true
-	checkAndMark := func(tryX, tryY int) bool {
-		markX := tryX - regionOriginX
-		if markX < 0 || markX >= maxShortMoveSide {
-			return false
-		}
-		markY := tryY - regionOriginY
-		if markY < 0 || markY >= maxShortMoveSide {
-			return false
-		}
+	return isTerrainClear(
+		who,
+		terrain,
+		x, y,
+		who.Type.Width,
+		who.Type.Height,
+	)
+}
 
-		if marks[markX][markY] {
-			return false
-		}
+func attemptMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
+	fmt.Printf("TODO AttemptMove %v\n", who.Location)
+	movedTotal := float64(0)
+	moveRemaining := walkDistance
+	for moveRemaining > 0 {
+		movedNext := attemptShortMove(who, terrain, goal, moveRemaining)
+		movedTotal = movedTotal + movedNext
+		moveRemaining = moveRemaining - movedNext
+		fmt.Printf("TODO Next ShortMove => %v movedNext (%.2f) total %.2f remaining %.2f\n",
+			who.Location, movedNext, movedTotal, moveRemaining)
+		if movedNext == 0 {
 
-		clear := isTerrainClear(
-			who,
-			terrain,
-			tryX,
-			tryY,
-			who.Type.Width,
-			who.Type.Height,
-		)
-
-		if !clear {
-			return false
-		}
-
-		marks[markX][markY] = true
-		return true
-	}
-
-	stack[0].x = who.Location.X
-	stack[0].y = who.Location.Y
-	stackDepth := 1
-	goalTile := tilePosition{
-		x: goal.X,
-		y: goal.Y,
-	}
-	closest := tilePosition{
-		x: who.Location.X,
-		y: who.Location.Y,
-	}
-	startDistSquared := dx*dx + dy*dy
-	closestDistSquared := startDistSquared
-	closestSteps := 0
-
-	for stackDepth > 0 {
-		current := stack[stackDepth-1]
-		if current == goalTile {
-			closest = current
-			closestSteps = stackDepth - 1
-			closestDistSquared = 0
 			break
 		}
+	}
 
-		pop := false
-		switch {
-		case stackDepth == maxSteps+1:
-			pop = true
-		case checkAndMark(current.x+1, current.y):
-			stack[stackDepth].x = current.x + 1
-			stack[stackDepth].y = current.y
-			stackDepth++
-		case checkAndMark(current.x, current.y+1):
-			stack[stackDepth].x = current.x
-			stack[stackDepth].y = current.y + 1
-			stackDepth++
-		case checkAndMark(current.x-1, current.y):
-			stack[stackDepth].x = current.x - 1
-			stack[stackDepth].y = current.y
-			stackDepth++
-		case checkAndMark(current.x, current.y-1):
-			stack[stackDepth].x = current.x
-			stack[stackDepth].y = current.y - 1
-			stackDepth++
-		default:
-			pop = true
+	fmt.Printf("TODO Final Position: %v\n", who.Location)
+	return movedTotal
+}
+
+func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
+	marks := &marks{
+		oX:   who.Location.X,
+		oY:   who.Location.Y,
+		dirX: 1,
+		dirY: 1,
+	}
+	if goal.X < marks.oX {
+		marks.dirX = -1
+	}
+	if goal.Y < marks.oY {
+		marks.dirY = -1
+	}
+
+	var path [maxPathLength]tile
+	closestPoint := tile{who.Location.X, who.Location.Y}
+	goalTile := tile{goal.X, goal.Y}
+	closestDistSquared := distSquared(closestPoint, goalTile)
+	path[0].x = who.Location.X
+	path[0].y = who.Location.Y
+	pathLength := 0
+
+	// At the end of the loop, we will
+	//
+	// 1) have a path that begins at who.Location and ends at goal in
+	// path, with goal in closestPoint
+	//
+	// OR
+	//
+	// 2) have the closest reachable point to goal, within
+	// maxShortMoveSide, stored in closestPoint, and path will be empty
+	//
+	for pathLength >= 0 && closestDistSquared > 0 {
+		current := path[pathLength]
+		writeMark(marks, current)
+
+		newDSquared := distSquared(current, goalTile)
+		if newDSquared < closestDistSquared {
+			closestPoint = current
+			closestDistSquared = newDSquared
 		}
 
-		if pop {
-			newDx, newDy := goal.X-current.x, goal.Y-current.y
-			newDistSquared := newDx*newDx + newDy*newDy
-			if closestDistSquared > newDistSquared {
-				closest = current
-				closestDistSquared = newDistSquared
-				closestSteps = stackDepth - 1
+		if newDSquared > 0 {
+			switch {
+			case checkMove(who, terrain, marks, current.x+1, current.y):
+				pathLength++
+				path[pathLength].x = current.x + 1
+				path[pathLength].y = current.y
+			case checkMove(who, terrain, marks, current.x, current.y+1):
+				pathLength++
+				path[pathLength].x = current.x
+				path[pathLength].y = current.y + 1
+			case checkMove(who, terrain, marks, current.x-1, current.y):
+				pathLength++
+				path[pathLength].x = current.x - 1
+				path[pathLength].y = current.y
+			case checkMove(who, terrain, marks, current.x, current.y-1):
+				pathLength++
+				path[pathLength].x = current.x
+				path[pathLength].y = current.y - 1
+			default: // Dead end, backtrack
+				pathLength--
 			}
-			stackDepth--
 		}
 	}
 
-	if closestDistSquared == startDistSquared {
-		return 0
+	if closestDistSquared > 0 {
+		return attemptShortMove(
+			who,
+			terrain,
+			Location{closestPoint.x, closestPoint.y, 0.0},
+			walkDistance,
+		)
 	}
+
+	// Assert - path contains a path to goal
+	stepsf, offset := math.Modf(walkDistance + who.Location.Offset)
+	steps := int(stepsf)
+
+	if pathLength <= steps {
+		steps = pathLength
+		offset = goal.Offset
+	}
+	endpoint := path[steps]
 
 	for x := 0; x < who.Type.Width; x++ {
 		for y := 0; y < who.Type.Height; y++ {
@@ -271,81 +269,30 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, maxSteps i
 		}
 	}
 
+	who.Location.X = endpoint.x
+	who.Location.Y = endpoint.y
+	who.Location.Offset = offset
+
 	for x := 0; x < who.Type.Width; x++ {
 		for y := 0; y < who.Type.Height; y++ {
-			newX := closest.x + x
-			newY := closest.y + y
+			newX := who.Location.X + x
+			newY := who.Location.Y + y
 			terrain.Board[newX][newY] = who
 		}
 	}
 
-	if closest == goalTile {
-		who.Location = goal
-	} else {
-		who.Location = Location{
-			X:       closest.x,
-			Y:       closest.y,
-			OffsetX: 0,
-			OffsetY: 0,
-		}
-	}
-
-	return closestSteps
+	return float64(steps) + offset
 }
 
-// Attempts to move the character from their current position to the
-// absolute position moveX, moveY. Move will stop if obstructed by
-// terrain bounds or other objects. Updates the terrain and location
-// of the given character.
-func attemptMove(who *Character, terrain Terrain, goal Location, distance float64) {
-	// The only guarantees the current implementation of attemptMove
-	// gives is who.Location will never be further away from goal
-	// after a call to attemptMove than it was before the call
-
-	maxSteps, _ := math.Modf(distance) // TODO can't just burn offset!
-	stepsRemaining := int(maxSteps)
-	for {
-		if stepsRemaining <= 0 {
-			break
-		}
-
-		goalDx, goalDy := goal.X-who.Location.X, goal.Y-who.Location.Y
-		nextGoal := goal
-		switch {
-		case goalDx >= maxShortMoveSide:
-			nextGoal.X = who.Location.X + (maxShortMoveSide - 1)
-			nextGoal.OffsetX = 0.0
-		case goalDx <= -maxShortMoveSide:
-			nextGoal.X = who.Location.X - (maxShortMoveSide + 1)
-			nextGoal.OffsetX = 0.0
-		}
-
-		switch {
-		case goalDy >= maxShortMoveSide:
-			nextGoal.Y = who.Location.Y + (maxShortMoveSide - 1)
-			nextGoal.OffsetY = 0.0
-		case goalDy <= -maxShortMoveSide:
-			nextGoal.Y = who.Location.Y - (maxShortMoveSide + 1)
-			nextGoal.OffsetY = 0.0
-		}
-
-		moved := attemptShortMove(who, terrain, nextGoal, stepsRemaining)
-		stepsRemaining = stepsRemaining - moved
-		if moved <= 0 {
-			break
-		}
-	}
-}
-
-func insideOfShadow(shadowSize float64, who *Character, target *House) bool {
-	targetX, targetY := FloatsFromLocation(target.Location)
-	whoXMin, whoYMin := FloatsFromLocation(who.Location)
-	whoXMax := whoXMin + float64(who.Type.Width)
-	whoYMax := whoYMin + float64(who.Type.Height)
+func insideOfShadow(shadowSize int, who *Character, target *House) bool {
+	targetX, targetY := target.Location.X, target.Location.Y
+	whoXMin, whoYMin := who.Location.X, who.Location.Y
+	whoXMax := whoXMin + who.Type.Width
+	whoYMax := whoYMin + who.Type.Height
 	shadowXMin := targetX - shadowSize
 	shadowYMin := targetY - shadowSize
-	shadowXMax := targetX + float64(target.Type.Width) + shadowSize
-	shadowYMax := targetY + float64(target.Type.Height) + shadowSize
+	shadowXMax := targetX + target.Type.Width + shadowSize
+	shadowYMax := targetY + target.Type.Height + shadowSize
 	xOverlap :=
 		(whoXMin > shadowXMin && whoXMin < shadowXMax) ||
 			(whoXMax > shadowXMin && whoXMax < shadowXMax)
@@ -571,11 +518,11 @@ func Tick(game *Game, dt float64) {
 					}
 					rerankHouse(game.terrain, target)
 				} else {
-					targetX, targetY := FloatsFromLocation(target.Location)
-					workTarget := LocationFromFloats(
-						targetX+float64(target.Type.Width)/2,
-						targetY+float64(target.Type.Height)/2,
-					)
+					workTarget := Location{
+						X:      target.Location.X + (target.Type.Width / 2),
+						Y:      target.Location.Y + (target.Type.Height / 2),
+						Offset: 0.0,
+					}
 					distance := who.Type.MovePerTick * dt
 					attemptMove(who, game.terrain, workTarget, distance)
 					fmt.Printf("TODO attempting move to house %v (ended %v)\n",
