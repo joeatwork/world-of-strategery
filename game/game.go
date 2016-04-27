@@ -105,14 +105,14 @@ func isTerrainClear(who interface{}, terrain Terrain, x, y, width, height int) b
 }
 
 const maxShortMoveSide = 8 // maxShortMoveSide must be less than sqrt MAX_INT
-const maxPathLength = maxShortMoveSide * maxShortMoveSide
+const maxFringeLength = maxShortMoveSide * maxShortMoveSide
 
 type tile struct {
 	x, y int
 }
 
-type marks struct {
-	m                  [maxShortMoveSide][maxShortMoveSide]bool
+type steps struct {
+	count              [maxShortMoveSide][maxShortMoveSide]int
 	oX, oY, dirX, dirY int
 }
 
@@ -121,15 +121,21 @@ func distSquared(a, b tile) int {
 	return dx*dx + dy*dy
 }
 
-func writeMark(m *marks, t tile) {
-	markX := (t.x - m.oX) * m.dirX
-	markY := (t.y - m.oY) * m.dirY
-	m.m[markX][markY] = true
+func writeStep(count int, s *steps, t tile) {
+	stepsX := (t.x - s.oX) * s.dirX
+	stepsY := (t.y - s.oY) * s.dirY
+	s.count[stepsX][stepsY] = count
 }
 
-func checkMove(who *Character, terrain Terrain, m *marks, x, y int) bool {
-	markX := (x - m.oX) * m.dirX
-	markY := (y - m.oY) * m.dirY
+func readStep(s *steps, t tile) int {
+	stepsX := (t.x - s.oX) * s.dirX
+	stepsY := (t.y - s.oY) * s.dirY
+	return s.count[stepsX][stepsY]
+}
+
+func checkMove(who *Character, terrain Terrain, s *steps, x, y int) bool {
+	stepX := (x - s.oX) * s.dirX
+	stepY := (y - s.oY) * s.dirY
 
 	if x < 0 || x > terrain.Width {
 		return false
@@ -137,13 +143,13 @@ func checkMove(who *Character, terrain Terrain, m *marks, x, y int) bool {
 	if y < 0 || y > terrain.Height {
 		return false
 	}
-	if markX < 0 || markX >= maxShortMoveSide {
+	if stepX < 0 || stepX >= maxShortMoveSide {
 		return false
 	}
-	if markY < 0 || markY >= maxShortMoveSide {
+	if stepY < 0 || stepY >= maxShortMoveSide {
 		return false
 	}
-	if m.m[markX][markY] {
+	if s.count[stepX][stepY] != -1 {
 		return false
 	}
 
@@ -156,8 +162,175 @@ func checkMove(who *Character, terrain Terrain, m *marks, x, y int) bool {
 	)
 }
 
+func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
+	if walkDistance < 0 {
+		panic("walkDistance must not be negative")
+	}
+
+	totalDistance := walkDistance + who.Location.Offset
+
+	// offset preserves the leftover walkDistance
+	// between calls to attemptShortMove, so that
+	//
+	//    attemptShortMove(..., far_away, 0.4)
+	//    attemptShortMove(..., far_away, 0.4)
+	//    attemptShortMove(..., far_away, 0.4)
+	//
+	// Ends with a move of one tile and an offset of 0.2
+	//
+	// As a special case, if the character arrives at goal, then it's
+	// offset will be goal.Offset - the character will decline to move
+	// all of walkDistance.
+
+	stepDistancef, offset := math.Modf(totalDistance)
+	stepDistance := int(stepDistancef)
+
+	steps := &steps{
+		oX:   who.Location.X,
+		oY:   who.Location.Y,
+		dirX: 1,
+		dirY: 1,
+	}
+	for x, _ := range steps.count {
+		for y := range steps.count[x] {
+			steps.count[x][y] = -1
+		}
+	}
+
+	if goal.X < steps.oX {
+		steps.dirX = -1
+	}
+	if goal.Y < steps.oY {
+		steps.dirY = -1
+	}
+
+	var fringe [maxFringeLength]tile
+	goalTile := tile{goal.X, goal.Y}
+	fringe[0] = tile{who.Location.X, who.Location.Y}
+	fringeStart := 0
+	fringeEnd := 1
+	writeStep(0, steps, fringe[0])
+
+	for fringeStart < fringeEnd {
+		fmt.Printf("TODO FRINGE %d:%d < %d: %v\n",
+			fringeStart, fringeEnd, maxFringeLength, fringe[fringeStart:fringeEnd])
+		fmt.Printf("TODO STEPS:\n")
+		for x, _ := range steps.count {
+			fmt.Printf("TODO > [")
+			for y, _ := range steps.count[x] {
+				fmt.Printf("%2d ", steps.count[x][y])
+			}
+			fmt.Printf("]\n")
+		}
+
+		current := fringe[fringeStart]
+		currentDist := readStep(steps, current)
+		fringeStart++
+		if currentDist < stepDistance {
+			if checkMove(who, terrain, steps, current.x+1, current.y) {
+				fringe[fringeEnd] = tile{current.x + 1, current.y}
+				writeStep(currentDist+1, steps, fringe[fringeEnd])
+				fringeEnd++
+			}
+			if checkMove(who, terrain, steps, current.x, current.y+1) {
+				fringe[fringeEnd] = tile{current.x, current.y + 1}
+				writeStep(currentDist+1, steps, fringe[fringeEnd])
+				fringeEnd++
+			}
+			if checkMove(who, terrain, steps, current.x-1, current.y) {
+				fringe[fringeEnd] = tile{current.x - 1, current.y}
+				writeStep(currentDist+1, steps, fringe[fringeEnd])
+				fringeEnd++
+			}
+			if checkMove(who, terrain, steps, current.x, current.y-1) {
+				fringe[fringeEnd] = tile{current.x, current.y - 1}
+				writeStep(currentDist+1, steps, fringe[fringeEnd])
+				fringeEnd++
+			}
+		}
+	}
+
+	fmt.Printf("TODO Fringe check complete: %d*%d,%d*%d toward %v\n",
+		steps.oX, steps.dirX, steps.oY, steps.dirY, goalTile)
+	for x, _ := range steps.count {
+		fmt.Printf("TODO > [")
+		for y, _ := range steps.count[x] {
+			fmt.Printf("%2d ", steps.count[x][y])
+		}
+		fmt.Printf("]\n")
+	}
+
+	// We've found the shortest distance to every reachable point in
+	// our "vision" range.
+
+	closestPoint := tile{who.Location.X, who.Location.Y}
+	closestSteps := readStep(steps, closestPoint)
+	closestDistSquared := distSquared(closestPoint, goalTile)
+
+	for x, _ := range steps.count {
+		for y, _ := range steps.count[x] {
+			pt := tile{
+				x: steps.oX + (x * steps.dirX),
+				y: steps.oY + (y * steps.dirY),
+			}
+			// fmt.Printf("TODO Distance check %d,%d => %v\n", x, y, pt)
+			ptSteps := readStep(steps, pt)
+			// fmt.Printf("TODO     ... distance %v steps\n", ptSteps)
+
+			if ptSteps != -1 {
+				newDSquared := distSquared(pt, goalTile)
+				if newDSquared < closestDistSquared {
+					closestPoint = pt
+					closestSteps = ptSteps
+					closestDistSquared = newDSquared
+					fmt.Printf("TODO new closest point %v\n", closestPoint)
+				}
+			}
+		}
+	}
+
+	if closestPoint == goalTile && offset > goal.Offset {
+		// If the character arrives at goal, it won't continue
+		// walking, so we discard leftover offset
+		offset = goal.Offset
+	}
+
+	// closestPoint now contains the closest reachable point to goal
+	// within our search area.
+
+	// closestSteps now contains the distance in steps to closestPoint
+
+	for x := 0; x < who.Type.Width; x++ {
+		for y := 0; y < who.Type.Height; y++ {
+			oldX := who.Location.X + x
+			oldY := who.Location.Y + y
+			terrain.Board[oldX][oldY] = nil
+		}
+	}
+
+	originalOffset := who.Location.Offset
+	who.Location.X = closestPoint.x
+	who.Location.Y = closestPoint.y
+	who.Location.Offset = offset
+
+	for x := 0; x < who.Type.Width; x++ {
+		for y := 0; y < who.Type.Height; y++ {
+			newX := who.Location.X + x
+			newY := who.Location.Y + y
+			terrain.Board[newX][newY] = who
+		}
+	}
+
+	// Facts
+	// who.Location.Offset < 1
+	// originalOffset < 1
+	// closestSteps == 0 or closestSteps >= 1
+	// if closestSteps == 0 then who.Location.Offset >= originalOffset
+	return float64(closestSteps) + (who.Location.Offset - originalOffset)
+}
+
 func attemptMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
-	fmt.Printf("TODO AttemptMove %v\n", who.Location)
+	fmt.Printf("TODO AttemptMove %v => %v\n", who.Location, goal)
 	movedTotal := float64(0)
 	moveRemaining := walkDistance
 	for moveRemaining > 0 {
@@ -174,114 +347,6 @@ func attemptMove(who *Character, terrain Terrain, goal Location, walkDistance fl
 
 	fmt.Printf("TODO Final Position: %v\n", who.Location)
 	return movedTotal
-}
-
-func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
-	marks := &marks{
-		oX:   who.Location.X,
-		oY:   who.Location.Y,
-		dirX: 1,
-		dirY: 1,
-	}
-	if goal.X < marks.oX {
-		marks.dirX = -1
-	}
-	if goal.Y < marks.oY {
-		marks.dirY = -1
-	}
-
-	var path [maxPathLength]tile
-	closestPoint := tile{who.Location.X, who.Location.Y}
-	goalTile := tile{goal.X, goal.Y}
-	closestDistSquared := distSquared(closestPoint, goalTile)
-	path[0].x = who.Location.X
-	path[0].y = who.Location.Y
-	pathLength := 0
-
-	// At the end of the loop, we will
-	//
-	// 1) have a path that begins at who.Location and ends at goal in
-	// path, with goal in closestPoint
-	//
-	// OR
-	//
-	// 2) have the closest reachable point to goal, within
-	// maxShortMoveSide, stored in closestPoint, and path will be empty
-	//
-	for pathLength >= 0 && closestDistSquared > 0 {
-		current := path[pathLength]
-		writeMark(marks, current)
-
-		newDSquared := distSquared(current, goalTile)
-		if newDSquared < closestDistSquared {
-			closestPoint = current
-			closestDistSquared = newDSquared
-		}
-
-		if newDSquared > 0 {
-			switch {
-			case checkMove(who, terrain, marks, current.x+1, current.y):
-				pathLength++
-				path[pathLength].x = current.x + 1
-				path[pathLength].y = current.y
-			case checkMove(who, terrain, marks, current.x, current.y+1):
-				pathLength++
-				path[pathLength].x = current.x
-				path[pathLength].y = current.y + 1
-			case checkMove(who, terrain, marks, current.x-1, current.y):
-				pathLength++
-				path[pathLength].x = current.x - 1
-				path[pathLength].y = current.y
-			case checkMove(who, terrain, marks, current.x, current.y-1):
-				pathLength++
-				path[pathLength].x = current.x
-				path[pathLength].y = current.y - 1
-			default: // Dead end, backtrack
-				pathLength--
-			}
-		}
-	}
-
-	if closestDistSquared > 0 {
-		return attemptShortMove(
-			who,
-			terrain,
-			Location{closestPoint.x, closestPoint.y, 0.0},
-			walkDistance,
-		)
-	}
-
-	// Assert - path contains a path to goal
-	stepsf, offset := math.Modf(walkDistance + who.Location.Offset)
-	steps := int(stepsf)
-
-	if pathLength <= steps {
-		steps = pathLength
-		offset = goal.Offset
-	}
-	endpoint := path[steps]
-
-	for x := 0; x < who.Type.Width; x++ {
-		for y := 0; y < who.Type.Height; y++ {
-			oldX := who.Location.X + x
-			oldY := who.Location.Y + y
-			terrain.Board[oldX][oldY] = nil
-		}
-	}
-
-	who.Location.X = endpoint.x
-	who.Location.Y = endpoint.y
-	who.Location.Offset = offset
-
-	for x := 0; x < who.Type.Width; x++ {
-		for y := 0; y < who.Type.Height; y++ {
-			newX := who.Location.X + x
-			newY := who.Location.Y + y
-			terrain.Board[newX][newY] = who
-		}
-	}
-
-	return float64(steps) + offset
 }
 
 func insideOfShadow(shadowSize int, who *Character, target *House) bool {
@@ -472,7 +537,7 @@ func AddCharacter(terrain Terrain, culture *Culture,
 
 const maxPlansAllowedPerCulture = 255
 
-func PlanHouse(culture *Culture, htype *HouseType, loc Location) *House {
+func PlanHouse(culture *Culture, houseType *HouseType, loc Location) *House {
 	if len(culture.PlannedHouses) >= maxPlansAllowedPerCulture {
 		for k, _ := range culture.PlannedHouses {
 			delete(culture.PlannedHouses, k)
