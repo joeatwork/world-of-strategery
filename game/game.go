@@ -124,6 +124,8 @@ func distSquared(a, b tile) int {
 func writeStep(count int, s *steps, t tile) {
 	stepsX := (t.x - s.oX) * s.dirX
 	stepsY := (t.y - s.oY) * s.dirY
+	fmt.Printf("Writing step %d to (org:%d,%d) (tile:%d,%d) (step:%d,%d)\n",
+		count, s.oX, s.oY, t.x, t.y, stepsX, stepsY)
 	s.count[stepsX][stepsY] = count
 }
 
@@ -185,24 +187,61 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	stepDistancef, offset := math.Modf(totalDistance)
 	stepDistance := int(stepDistancef)
 
-	steps := &steps{
-		oX:   who.Location.X,
-		oY:   who.Location.Y,
-		dirX: 1,
-		dirY: 1,
+	visionOffsetX, visionOffsetY := 0, 0
+	dirX, dirY := 1, 1
+	dx, dy := goal.X-who.Location.X, goal.Y-who.Location.Y
+	if dx < maxShortMoveSide && dx >= 0 {
+		visionOffsetX = (dx - maxShortMoveSide) / 2
 	}
+	if dx > -maxShortMoveSide && dx < 0 {
+		visionOffsetX = (maxShortMoveSide + dx) / 2
+	}
+	if dy < maxShortMoveSide && dy >= 0 {
+		visionOffsetY = (dy - maxShortMoveSide) / 2
+	}
+	if dy < -maxShortMoveSide && dy < 0 {
+		visionOffsetY = (maxShortMoveSide + dy) / 2
+	}
+	if visionOffsetX == 0 {
+		visionOffsetX = 1
+	}
+	if visionOffsetY == 0 {
+		visionOffsetY = 1
+	}
+	if dx < 0 {
+		dirX = -1
+	}
+	if dy < 0 {
+		dirY = -1
+	}
+
+	fmt.Printf("TODO VISON OFFSETS %d => %d, %d => %d\n",
+		dx, visionOffsetX, dy, visionOffsetY)
+
+	steps := &steps{
+		// Because of dirX, the sign of visionOffset isn't what you think it should be
+		oX:   who.Location.X + visionOffsetX,
+		oY:   who.Location.Y + visionOffsetY,
+		dirX: dirX,
+		dirY: dirY,
+	}
+
+	// if steps.oX < 0 {
+	// 	steps.oX = 0
+	// }
+	// if steps.oY < 0 {
+	// 	steps.oY = 0
+	// }
+	// if steps.ox > TOO BIG // EDGE CASE super skinny
+	// if steps.oy > TOO BIG // EDGE CASE super short fields?
+
 	for x, _ := range steps.count {
 		for y := range steps.count[x] {
 			steps.count[x][y] = -1
 		}
 	}
 
-	if goal.X < steps.oX {
-		steps.dirX = -1
-	}
-	if goal.Y < steps.oY {
-		steps.dirY = -1
-	}
+	fmt.Printf("TODO steps %v\n", steps)
 
 	var fringe [maxFringeLength]tile
 	goalTile := tile{goal.X, goal.Y}
@@ -321,11 +360,7 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 		}
 	}
 
-	// Facts
-	// who.Location.Offset < 1
-	// originalOffset < 1
-	// closestSteps == 0 or closestSteps >= 1
-	// if closestSteps == 0 then who.Location.Offset >= originalOffset
+	// TODO this could be negative?
 	return float64(closestSteps) + (who.Location.Offset - originalOffset)
 }
 
