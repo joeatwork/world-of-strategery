@@ -20,7 +20,6 @@ type Location struct {
 }
 
 type CharacterType struct {
-	// TODO rounding errors at short ticks!!
 	MovePerTick, WorkPerTick, MaxCarry float64
 	Width, Height                      int
 }
@@ -124,8 +123,6 @@ func distSquared(a, b tile) int {
 func writeStep(count int, s *steps, t tile) {
 	stepsX := (t.x - s.oX) * s.dirX
 	stepsY := (t.y - s.oY) * s.dirY
-	fmt.Printf("Writing step %d to (org:%d,%d) (tile:%d,%d) (step:%d,%d)\n",
-		count, s.oX, s.oY, t.x, t.y, stepsX, stepsY)
 	s.count[stepsX][stepsY] = count
 }
 
@@ -223,16 +220,11 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 		dirY: dirY,
 	}
 
-	fmt.Printf("TODO VISON OFFSETS %d => %d, %d => %d\n",
-		dx, dirX*visionOffsetX, dy, dirY*visionOffsetY)
-
 	for x, _ := range steps.count {
 		for y := range steps.count[x] {
 			steps.count[x][y] = -1
 		}
 	}
-
-	fmt.Printf("TODO steps %v\n", steps)
 
 	var fringe [maxFringeLength]tile
 	goalTile := tile{goal.X, goal.Y}
@@ -242,17 +234,6 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	writeStep(0, steps, fringe[0])
 
 	for fringeStart < fringeEnd {
-		fmt.Printf("TODO FRINGE %d:%d < %d: %v\n",
-			fringeStart, fringeEnd, maxFringeLength, fringe[fringeStart:fringeEnd])
-		fmt.Printf("TODO STEPS:\n")
-		for x, _ := range steps.count {
-			fmt.Printf("TODO > [")
-			for y, _ := range steps.count[x] {
-				fmt.Printf("%2d ", steps.count[x][y])
-			}
-			fmt.Printf("]\n")
-		}
-
 		current := fringe[fringeStart]
 		currentDist := readStep(steps, current)
 		fringeStart++
@@ -280,16 +261,6 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 		}
 	}
 
-	fmt.Printf("TODO Fringe check complete: %d*%d,%d*%d toward %v\n",
-		steps.oX, steps.dirX, steps.oY, steps.dirY, goalTile)
-	for x, _ := range steps.count {
-		fmt.Printf("TODO > [")
-		for y, _ := range steps.count[x] {
-			fmt.Printf("%2d ", steps.count[x][y])
-		}
-		fmt.Printf("]\n")
-	}
-
 	// We've found the shortest distance to every reachable point in
 	// our "vision" range.
 
@@ -303,9 +274,7 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 				x: steps.oX + (x * steps.dirX),
 				y: steps.oY + (y * steps.dirY),
 			}
-			// fmt.Printf("TODO Distance check %d,%d => %v\n", x, y, pt)
 			ptSteps := readStep(steps, pt)
-			// fmt.Printf("TODO     ... distance %v steps\n", ptSteps)
 
 			if ptSteps != -1 {
 				newDSquared := distSquared(pt, goalTile)
@@ -313,7 +282,6 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 					closestPoint = pt
 					closestSteps = ptSteps
 					closestDistSquared = newDSquared
-					fmt.Printf("TODO new closest point %v\n", closestPoint)
 				}
 			}
 		}
@@ -351,27 +319,22 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 		}
 	}
 
-	// TODO this could be negative?
+	// TODO this could be negative!
 	return float64(closestSteps) + (who.Location.Offset - originalOffset)
 }
 
 func attemptMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
-	fmt.Printf("TODO AttemptMove %v => %v\n", who.Location, goal)
 	movedTotal := float64(0)
 	moveRemaining := walkDistance
 	for moveRemaining > 0 {
 		movedNext := attemptShortMove(who, terrain, goal, moveRemaining)
 		movedTotal = movedTotal + movedNext
 		moveRemaining = moveRemaining - movedNext
-		fmt.Printf("TODO Next ShortMove => %v movedNext (%.2f) total %.2f remaining %.2f\n",
-			who.Location, movedNext, movedTotal, moveRemaining)
 		if movedNext == 0 {
-
 			break
 		}
 	}
 
-	fmt.Printf("TODO Final Position: %v\n", who.Location)
 	return movedTotal
 }
 
@@ -526,7 +489,6 @@ func (e *CantPlaceCharacterError) Error() string {
 	return e.msg
 }
 
-// TODO can't call this with private terrain!?
 func AddCharacter(terrain Terrain, culture *Culture,
 	ctype *CharacterType, loc Location) (*Character, *CantPlaceCharacterError) {
 	positionClear := isTerrainClear(
@@ -594,18 +556,14 @@ func Tick(game *Game, dt float64) {
 			who := e.Value.(*Character)
 			switch target := who.Target.(type) {
 			case *Location:
-				TODO_Old_location := who.Location
 				distance := who.Type.MovePerTick * dt
 				attemptMove(who, game.terrain, *target, distance)
-				fmt.Printf("TODO attempting move %v => %v (ended %v)\n",
-					TODO_Old_location, target, who.Location)
 			case *House:
 				if insideOfShadow(defaultShadowSize, who, target) {
 					if who.Culture == target.Culture {
 						build(game.terrain, who, target, dt)
 					} else {
 						mine(who, target, dt)
-						fmt.Printf("TODO attempting mine\n")
 					}
 					rerankHouse(game.terrain, target)
 				} else {
@@ -616,8 +574,6 @@ func Tick(game *Game, dt float64) {
 					}
 					distance := who.Type.MovePerTick * dt
 					attemptMove(who, game.terrain, workTarget, distance)
-					fmt.Printf("TODO attempting move to house %v (ended %v)\n",
-						target, who.Location)
 				}
 				reevaluateTargetHouse(who)
 			case nil:
