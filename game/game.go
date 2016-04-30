@@ -191,13 +191,13 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	dirX, dirY := 1, 1
 	dx, dy := goal.X-who.Location.X, goal.Y-who.Location.Y
 	if dx < maxShortMoveSide && dx >= 0 {
-		visionOffsetX = (dx - maxShortMoveSide) / 2
+		visionOffsetX = (maxShortMoveSide - dx) / 2
 	}
 	if dx > -maxShortMoveSide && dx < 0 {
 		visionOffsetX = (maxShortMoveSide + dx) / 2
 	}
 	if dy < maxShortMoveSide && dy >= 0 {
-		visionOffsetY = (dy - maxShortMoveSide) / 2
+		visionOffsetY = (maxShortMoveSide - dy) / 2
 	}
 	if dy < -maxShortMoveSide && dy < 0 {
 		visionOffsetY = (maxShortMoveSide + dy) / 2
@@ -215,25 +215,16 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 		dirY = -1
 	}
 
-	fmt.Printf("TODO VISON OFFSETS %d => %d, %d => %d\n",
-		dx, visionOffsetX, dy, visionOffsetY)
-
 	steps := &steps{
 		// Because of dirX, the sign of visionOffset isn't what you think it should be
-		oX:   who.Location.X + visionOffsetX,
-		oY:   who.Location.Y + visionOffsetY,
+		oX:   who.Location.X - dirX*visionOffsetX,
+		oY:   who.Location.Y - dirY*visionOffsetY,
 		dirX: dirX,
 		dirY: dirY,
 	}
 
-	// if steps.oX < 0 {
-	// 	steps.oX = 0
-	// }
-	// if steps.oY < 0 {
-	// 	steps.oY = 0
-	// }
-	// if steps.ox > TOO BIG // EDGE CASE super skinny
-	// if steps.oy > TOO BIG // EDGE CASE super short fields?
+	fmt.Printf("TODO VISON OFFSETS %d => %d, %d => %d\n",
+		dx, dirX*visionOffsetX, dy, dirY*visionOffsetY)
 
 	for x, _ := range steps.count {
 		for y := range steps.count[x] {
