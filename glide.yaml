@@ -1,0 +1,7 @@
+package: github.com/joeatwork/world-of-strategery
+subpackages:
+import:
+- package: golang.org/x/net
+  version: 7e42c0e1329bb108f7376a7618a2871ab90f1c4d
+  subpackages:
+  - websocket

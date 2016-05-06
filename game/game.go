@@ -548,6 +548,19 @@ func UnplanHouse(house *House) {
 	delete(house.Culture.PlannedHouses, house)
 }
 
+type Orders struct{}
+
+type GameStatus struct{}
+
+func ApplyOrders(game *Game, orders Orders) {
+	// TODO here is where players make changes
+}
+
+func ReadStatus(game *Game) GameStatus {
+	// TODO here is where players see the game state
+	return GameStatus{}
+}
+
 func Tick(game *Game, dt float64) {
 	// TODO shouldn't iterate by culture, or one team gets to move
 	// before the other
