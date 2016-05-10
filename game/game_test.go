@@ -92,7 +92,8 @@ var houseType = &HouseType{
 }
 
 func TestAttemptMoveZeroDistance(t *testing.T) {
-	game := NewGame(1, 10, 10)
+	game := NewGame(10, 10)
+	AddCulture(game)
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -107,7 +108,8 @@ func TestAttemptMoveZeroDistance(t *testing.T) {
 }
 
 func TestAttemptMovePositive(t *testing.T) {
-	game := NewGame(1, 10, 10)
+	game := NewGame(10, 10)
+	AddCulture(game)
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -122,7 +124,8 @@ func TestAttemptMovePositive(t *testing.T) {
 }
 
 func TestAttemptMoveNegative(t *testing.T) {
-	game := NewGame(1, 10, 10)
+	game := NewGame(10, 10)
+	AddCulture(game)
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -138,7 +141,8 @@ func TestAttemptMoveNegative(t *testing.T) {
 }
 
 func TestAddCharacterSimple(t *testing.T) {
-	game := NewGame(1, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
 
 	character, err := AddCharacter(
 		game.terrain,
@@ -179,7 +183,8 @@ func TestAddCharacterSimple(t *testing.T) {
 }
 
 func TestAddCharacterOrigin(t *testing.T) {
-	game := NewGame(1, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
 	character, err := AddCharacter(game.terrain, game.Cultures[0], workerType, loc0x0)
 
 	if err != nil {
@@ -201,7 +206,8 @@ func TestAddCharacterOrigin(t *testing.T) {
 }
 
 func TestAddCharacterEdge(t *testing.T) {
-	game := NewGame(1, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
 	character, err := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -228,7 +234,9 @@ func TestAddCharacterEdge(t *testing.T) {
 }
 
 func TestAddCharacterCollision(t *testing.T) {
-	game := NewGame(1, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
+
 	_, err := AddCharacter(game.terrain, game.Cultures[0], workerType, loc1x1)
 	if err != nil {
 		t.Errorf("unexpected error adding character: %v", err)
@@ -253,7 +261,9 @@ func TestAddCharacterCollision(t *testing.T) {
 }
 
 func TestAddCharacterOutOfBounds(t *testing.T) {
-	game := NewGame(1, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
+
 	outofbounds := [...]Location{
 		Location{-1, -1, 0.0},
 		Location{-1, 0, 0.0},
@@ -276,7 +286,9 @@ func TestAddCharacterOutOfBounds(t *testing.T) {
 }
 
 func TestAttemptMoveWalkAround(t *testing.T) {
-	game := NewGame(1, 8, 8)
+	game := NewGame(8, 8)
+	AddCulture(game)
+
 	walker, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -336,7 +348,8 @@ func TestAttemptMoveHappyPath(t *testing.T) {
 	theight := 4
 	for x := 0; x < twidth-workerType.Width; x++ {
 		for y := 0; y < theight-workerType.Height; y++ {
-			game := NewGame(1, twidth, theight)
+			game := NewGame(twidth, theight)
+			AddCulture(game)
 			character, _ := AddCharacter(
 				game.terrain,
 				game.Cultures[0],
@@ -391,7 +404,9 @@ func TestAttemptMoveOutOfBounds(t *testing.T) {
 	}
 
 	for _, loc := range outofbounds {
-		game := NewGame(1, 4, 4)
+		game := NewGame(4, 4)
+		AddCulture(game)
+
 		character, _ := AddCharacter(
 			game.terrain,
 			game.Cultures[0],
@@ -416,7 +431,9 @@ func TestAttemptMoveNonzeroOffset(t *testing.T) {
 }
 
 func TestAttemptMoveLong(t *testing.T) {
-	game := NewGame(1, 128, 128)
+	game := NewGame(128, 128)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -432,7 +449,9 @@ func TestAttemptMoveLong(t *testing.T) {
 }
 
 func TestAttemptMoveObstructed(t *testing.T) {
-	game := NewGame(1, 32, 32)
+	game := NewGame(32, 32)
+	AddCulture(game)
+
 	walker, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -463,7 +482,9 @@ func TestAttemptMoveObstructed(t *testing.T) {
 }
 
 func TestTooManyPlannedHouses(t *testing.T) {
-	game := NewGame(1, 1, 1)
+	game := NewGame(1, 1)
+	AddCulture(game)
+
 	for i := 0; i < maxPlansAllowedPerCulture; i++ {
 		PlanHouse(
 			game.Cultures[0],
@@ -497,7 +518,9 @@ func TestInsideOfShadow(t *testing.T) {
 	width, height := 16, 16
 	for x := 0; x+workerType.Width < width; x++ {
 		for y := 0; y+workerType.Height < height; y++ {
-			game := NewGame(1, width, height)
+			game := NewGame(width, height)
+			AddCulture(game)
+
 			house := PlanHouse(
 				game.Cultures[0],
 				houseType,
@@ -525,7 +548,8 @@ func TestInsideOfShadow(t *testing.T) {
 }
 
 func TestRerankPlannedToBuilt(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
 	house := PlanHouse(
 		game.Cultures[0],
 		houseType,
@@ -555,7 +579,9 @@ func TestRerankPlannedToBuilt(t *testing.T) {
 }
 
 func TestRerankBuiltToDemolished(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+
 	house := PlanHouse(
 		game.Cultures[0],
 		houseType,
@@ -584,7 +610,9 @@ func TestRerankBuiltToDemolished(t *testing.T) {
 }
 
 func TestReevaluateBuildOk(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -606,7 +634,10 @@ func TestReevaluateBuildOk(t *testing.T) {
 }
 
 func TestReevaluateMineOk(t *testing.T) {
-	game := NewGame(2, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -628,7 +659,9 @@ func TestReevaluateMineOk(t *testing.T) {
 }
 
 func TestReevaluateBuildComplete(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -651,7 +684,9 @@ func TestReevaluateBuildComplete(t *testing.T) {
 }
 
 func TestReevaluateOutOfBuildResources(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -673,7 +708,10 @@ func TestReevaluateOutOfBuildResources(t *testing.T) {
 }
 
 func TestReevaluateOutOfCarryCapacity(t *testing.T) {
-	game := NewGame(2, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],
@@ -696,7 +734,9 @@ func TestReevaluateOutOfCarryCapacity(t *testing.T) {
 }
 
 func TestReevaluateHouseDemolished(t *testing.T) {
-	game := NewGame(1, 16, 16)
+	game := NewGame(16, 16)
+	AddCulture(game)
+
 	character, _ := AddCharacter(
 		game.terrain,
 		game.Cultures[0],

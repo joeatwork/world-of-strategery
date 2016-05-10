@@ -457,9 +457,9 @@ abandon:
 	return
 }
 
-func NewGame(numCultures, width, height int) *Game {
+func NewGame(width, height int) *Game {
 	ret := Game{
-		Cultures: make([]*Culture, numCultures),
+		Cultures: make([]*Culture, 0),
 		terrain: Terrain{
 			Board:  make([][]interface{}, width),
 			Width:  width,
@@ -467,18 +467,20 @@ func NewGame(numCultures, width, height int) *Game {
 		},
 	}
 
-	for i, _ := range ret.Cultures {
-		ret.Cultures[i] = &Culture{
-			PlannedHouses: make(map[*House]bool),
-			BuiltHouses:   make(map[*House]bool),
-		}
-	}
-
 	for i, _ := range ret.terrain.Board {
 		ret.terrain.Board[i] = make([]interface{}, ret.terrain.Height)
 	}
 
 	return &ret
+}
+
+func AddCulture(game *Game) *Culture {
+	ret := &Culture{
+		PlannedHouses: make(map[*House]bool),
+		BuiltHouses:   make(map[*House]bool),
+	}
+	game.Cultures = append(game.Cultures, ret)
+	return ret
 }
 
 type CantPlaceCharacterError struct {

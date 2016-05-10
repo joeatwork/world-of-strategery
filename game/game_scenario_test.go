@@ -1,11 +1,11 @@
 package game
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestBuildAndMine(t *testing.T) {
-	game := NewGame(2, 4, 4)
+	game := NewGame(4, 4)
+	AddCulture(game)
+	AddCulture(game)
 	redHouse := PlanHouse(
 		game.Cultures[0],
 		houseType,
