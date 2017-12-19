@@ -9,21 +9,29 @@ import (
 
 const defaultShadowSize = 1
 
+// Terrain is a space that contains a game
 type Terrain struct {
 	Board         [][]interface{}
 	Width, Height int
 }
 
+// Location is an absolute spot in a Terrain, including a discrete position and
+// a cosmetic offset to show continuous motion
 type Location struct {
 	X, Y   int
 	Offset float64
 }
 
+// CharacterType describes attributes shared between characters, like their
+// movement speed or how many resources they can carry
 type CharacterType struct {
 	MovePerTick, WorkPerTick, MaxCarry float64
 	Width, Height                      int
 }
 
+// Character is an individual agent in the game - Characters have a type,
+// belong to a culture, occupy a position in the Terrain, and have a target for
+// their moves.
 type Character struct {
 	Carrying float64
 	Culture  *Culture
@@ -32,11 +40,16 @@ type Character struct {
 	Type     *CharacterType
 }
 
+// HouseType is a collection of attributes shared by many houses, for example
+// how many resources are required for a completed house.
 type HouseType struct {
 	MaxResources  float64
 	Width, Height int
 }
 
+// House is a structure located in Terrain, that is made of resources. The
+// actions of cultures are mining resources from houses and using them to build
+// other houses.
 type House struct {
 	Type          *HouseType
 	Culture       *Culture
@@ -44,12 +57,16 @@ type House struct {
 	ResourcesLeft float64
 }
 
+// Culture is a collection Characters and Houses (including Houses that don't
+// yet exist but the culture aspires to build. Cultures will work as a unit to
+// pursue their goals.
 type Culture struct {
 	Characters    list.List
 	PlannedHouses map[*House]bool
 	BuiltHouses   map[*House]bool
 }
 
+// Game is a universe of Cultures and their Terrain.
 type Game struct {
 	Cultures []*Culture
 	terrain  Terrain
@@ -457,6 +474,8 @@ abandon:
 	return
 }
 
+// NewGame constructs a new game with terrain dimensions width, height. The
+// returned game has no cultures and no buildings.
 func NewGame(width, height int) *Game {
 	ret := Game{
 		Cultures: make([]*Culture, 0),
@@ -474,6 +493,10 @@ func NewGame(width, height int) *Game {
 	return &ret
 }
 
+// AddCulture creates and returns a new Culture associated with the given Game. Typical games will begin with
+//   g = NewGame(x, y)
+//   playerOne = AddCulture(g)
+//   playerTwo = AddCulture(g)
 func AddCulture(game *Game) *Culture {
 	ret := &Culture{
 		PlannedHouses: make(map[*House]bool),
@@ -491,6 +514,9 @@ func (e *CantPlaceCharacterError) Error() string {
 	return e.msg
 }
 
+// AddCharacter places a new character with the given attributes into the given
+// terrain, or fails if the spot the character would end on is obstructed.
+// AddCharacter is the right way to create new characters in a game.
 func AddCharacter(terrain Terrain, culture *Culture,
 	ctype *CharacterType, loc Location) (*Character, *CantPlaceCharacterError) {
 	positionClear := isTerrainClear(
@@ -527,6 +553,9 @@ func AddCharacter(terrain Terrain, culture *Culture,
 
 const maxPlansAllowedPerCulture = 255
 
+// PlanHouse declares the intent by a given culture to build a house. Cultures
+// can plan houses that are impossible to actually build, and this function
+// will let them do it.
 func PlanHouse(culture *Culture, houseType *HouseType, loc Location) *House {
 	if len(culture.PlannedHouses) >= maxPlansAllowedPerCulture {
 		for k, _ := range culture.PlannedHouses {
@@ -546,6 +575,8 @@ func PlanHouse(culture *Culture, houseType *HouseType, loc Location) *House {
 	return ret
 }
 
+// UnplanHouse cancels the plan to build a house. Once a house has been
+// started, there is no need to unplan it.
 func UnplanHouse(house *House) {
 	delete(house.Culture.PlannedHouses, house)
 }
@@ -563,9 +594,12 @@ func ReadStatus(game *Game) GameStatus {
 	return GameStatus{}
 }
 
+// Tick advances the game state by dt units of time. No commands can arrive
+// during a Tick.
 func Tick(game *Game, dt float64) {
 	// TODO shouldn't iterate by culture, or one team gets to move
 	// before the other
+	// TODO shouldn't just accept any random dt or the progress of the game will depend on
 	for _, culture := range game.Cultures {
 		for e := culture.Characters.Front(); e != nil; e = e.Next() {
 			who := e.Value.(*Character)
