@@ -22,8 +22,6 @@ func statusMarshal(v interface{}) (msg []byte, payloadType byte, err error) {
 }
 
 func ordersUnmarshal(msg []byte, payloadType byte, v interface{}) (err error) {
-	orders := v.(*game.Orders)
-	*orders = game.Orders{}
 	return nil
 }
 
@@ -48,8 +46,8 @@ func main() {
 
 		go func() {
 			for !gameLoop.IsStopped() {
-				var orders game.Orders
-				if err := ordersCodec.Receive(ws, &orders); err != nil {
+				var orders []game.Order
+				if err := ordersCodec.Receive(ws, orders); err != nil {
 					log.Printf("can't read, %v", err)
 					gameLoop.Stop()
 				} else {

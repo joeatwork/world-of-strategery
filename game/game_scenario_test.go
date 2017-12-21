@@ -36,7 +36,12 @@ func TestBuildAndMine(t *testing.T) {
 	for redHouse.ResourcesLeft < redHouse.Type.MaxResources {
 		if red.Carrying == 0 {
 			red.Carrying = red.Type.MaxCarry
-			red.Target = redHouse
+			target := &TargetOrder{Character: "red", Target: "redHouse"}
+			err = target.Apply(game)
+			if err != nil {
+				DumpTerrain(game.terrain)
+				t.Fatalf("can't set red target to redHouse: %v", err)
+			}
 		}
 
 		carryingBefore := red.Carrying

@@ -156,8 +156,7 @@ func TestAddCharacterSimple(t *testing.T) {
 	}
 
 	found := false
-	for e := game.Cultures[0].Characters.Front(); e != nil; e = e.Next() {
-		chr := e.Value.(*Character)
+	for _, chr := range game.Cultures[0].Characters {
 		found = character == chr
 		if found {
 			break
@@ -754,5 +753,58 @@ func TestReevaluateHouseDemolished(t *testing.T) {
 	reevaluateTargetHouse(character)
 	if character.Target != nil {
 		t.Errorf("Character still trying to build demolished house")
+	}
+}
+
+func TestNamingIsntTriviallyBroken(t *testing.T) {
+	game := NewGame(16, 16)
+	AddCulture(game)
+
+	c1, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	c2, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		Location{4, 4, 0.0},
+	)
+
+	if c1.Name == c2.Name {
+		t.Errorf("Names appear to be constant!")
+	}
+}
+
+func TestTargetOrder(t *testing.T) {
+	game := NewGame(16, 16)
+	AddCulture(game)
+
+	character, _ := AddCharacter(
+		game.terrain,
+		game.Cultures[0],
+		workerType,
+		loc0x0,
+	)
+	house := PlanHouse(
+		game.Cultures[0],
+		houseType,
+		Location{4, 4, 0.0},
+	)
+
+	order := &TargetOrder{
+		Character: character.Name,
+		Target:    house.Name,
+	}
+
+	err := order.Apply(game)
+	if err != nil {
+		t.Errorf("Could not order character to target: %v", err)
+	}
+
+	if character.Target != house {
+		t.Errorf("Targeting character failed")
 	}
 }

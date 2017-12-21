@@ -5,24 +5,25 @@ import (
 	"time"
 )
 
-// Interact with the GameLoop via
-// 1) possibly blocking, buffered writes of Orders
-// 2) Quick, "last snapshot" reads of Gamestatus
+// GameLoop manages an ongoing game as a concurrent process. You can ask the
+// GameLoop for a snapshot of the game state, or send the GameLoop orders that
+// it will relay into the game it contains.
 type GameLoop struct {
 	status     GameStatus
-	orders     chan<- Orders
+	orders     chan<- []Order
 	stopped    bool
 	statusLock sync.RWMutex
 	stopLock   sync.RWMutex
 }
 
+// ReadLatestStatus returns a (possibly out of date) snapshot of the game status.
 func (l *GameLoop) ReadLatestStatus() GameStatus {
 	l.statusLock.RLock()
 	defer l.statusLock.RUnlock()
 	return l.status
 }
 
-func (l *GameLoop) WriteOrders(orders Orders) {
+func (l *GameLoop) WriteOrders(orders []Order) {
 	l.orders <- orders
 }
 
@@ -40,7 +41,7 @@ func (l *GameLoop) IsStopped() bool {
 
 func RunGameLoop() *GameLoop {
 	g := &Game{}
-	orders := make(chan Orders)
+	orders := make(chan []Order)
 	shared := &GameLoop{}
 	shared.status = ReadStatus(g)
 	shared.orders = orders
@@ -50,7 +51,9 @@ func RunGameLoop() *GameLoop {
 		for shared.IsStopped() {
 			select {
 			case orders := <-orders:
-				ApplyOrders(g, orders)
+				for _, o := range orders {
+					o.Apply(g)
+				}
 			default:
 			}
 

@@ -1,7 +1,9 @@
 package game
 
 import (
-	"container/list"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -38,6 +40,7 @@ type Character struct {
 	Location Location
 	Target   interface{}
 	Type     *CharacterType
+	Name     string
 }
 
 // HouseType is a collection of attributes shared by many houses, for example
@@ -55,13 +58,14 @@ type House struct {
 	Culture       *Culture
 	Location      Location
 	ResourcesLeft float64
+	Name          string
 }
 
 // Culture is a collection Characters and Houses (including Houses that don't
 // yet exist but the culture aspires to build. Cultures will work as a unit to
 // pursue their goals.
 type Culture struct {
-	Characters    list.List
+	Characters    []*Character
 	PlannedHouses map[*House]bool
 	BuiltHouses   map[*House]bool
 }
@@ -420,6 +424,12 @@ func build(terrain Terrain, who *Character, target *House, dt float64) {
 	who.Carrying = who.Carrying - transfer
 }
 
+func calculateName(x interface{}) string {
+	s := fmt.Sprintf("%p", x)
+	hashed := sha256.Sum224([]byte(s))
+	return base64.StdEncoding.EncodeToString(hashed[:16])
+}
+
 func rerankHouse(terrain Terrain, house *House) {
 	if house.ResourcesLeft == 0 {
 		delete(house.Culture.BuiltHouses, house)
@@ -486,7 +496,7 @@ func NewGame(width, height int) *Game {
 		},
 	}
 
-	for i, _ := range ret.terrain.Board {
+	for i := range ret.terrain.Board {
 		ret.terrain.Board[i] = make([]interface{}, ret.terrain.Height)
 	}
 
@@ -506,19 +516,11 @@ func AddCulture(game *Game) *Culture {
 	return ret
 }
 
-type CantPlaceCharacterError struct {
-	msg string
-}
-
-func (e *CantPlaceCharacterError) Error() string {
-	return e.msg
-}
-
 // AddCharacter places a new character with the given attributes into the given
 // terrain, or fails if the spot the character would end on is obstructed.
 // AddCharacter is the right way to create new characters in a game.
 func AddCharacter(terrain Terrain, culture *Culture,
-	ctype *CharacterType, loc Location) (*Character, *CantPlaceCharacterError) {
+	ctype *CharacterType, loc Location) (*Character, error) {
 	positionClear := isTerrainClear(
 		nil,
 		terrain,
@@ -529,9 +531,9 @@ func AddCharacter(terrain Terrain, culture *Culture,
 	)
 
 	if !positionClear {
-		return nil, &CantPlaceCharacterError{
+		return nil, errors.New(
 			"can't place character, position is occupied or out of bounds",
-		}
+		)
 	}
 
 	character := &Character{
@@ -540,6 +542,7 @@ func AddCharacter(terrain Terrain, culture *Culture,
 		Type:     ctype,
 	}
 
+	character.Name = calculateName(character)
 	for x := 0; x < character.Type.Width; x++ {
 		for y := 0; y < character.Type.Height; y++ {
 			placeX, placeY := int(loc.X)+x, int(loc.Y)+y
@@ -547,7 +550,7 @@ func AddCharacter(terrain Terrain, culture *Culture,
 		}
 	}
 
-	culture.Characters.PushBack(character)
+	culture.Characters = append(culture.Characters, character)
 	return character, nil
 }
 
@@ -571,6 +574,7 @@ func PlanHouse(culture *Culture, houseType *HouseType, loc Location) *House {
 		ResourcesLeft: 0,
 	}
 
+	ret.Name = calculateName(ret)
 	culture.PlannedHouses[ret] = true
 	return ret
 }
@@ -581,11 +585,38 @@ func UnplanHouse(house *House) {
 	delete(house.Culture.PlannedHouses, house)
 }
 
-type Orders struct{}
+// Order is an instruction outside of the game that updates the game state.
+type Order interface {
+	Apply(*Game) error
+}
+
+// TargetOrder instructs the name character to target the named object.
+type TargetOrder struct {
+	Character string `json:"character"`
+	Target    string `json:"target"`
+}
+
+func (*TargetOrder) Apply(game *Game) error {
+	return errors.New("TargetOrder.Apply is unimplemented")
+}
+
+// MarchOrder instructs the named character to find a path to location X, Y
+type MarchOrder struct {
+	Character string
+	X, Y      int
+}
+
+// PlanOrder instructs the named culture to build a house of the named
+// housetype at the given location.
+type PlanOrder struct {
+	Culture   string
+	HouseType string
+	X, Y      int
+}
 
 type GameStatus struct{}
 
-func ApplyOrders(game *Game, orders Orders) {
+func ApplyOrders(game *Game, orders []Order) {
 	// TODO here is where players make changes
 }
 
@@ -601,8 +632,7 @@ func Tick(game *Game, dt float64) {
 	// before the other
 	// TODO shouldn't just accept any random dt or the progress of the game will depend on
 	for _, culture := range game.Cultures {
-		for e := culture.Characters.Front(); e != nil; e = e.Next() {
-			who := e.Value.(*Character)
+		for _, who := range culture.Characters {
 			switch target := who.Target.(type) {
 			case *Location:
 				distance := who.Type.MovePerTick * dt
