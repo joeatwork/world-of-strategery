@@ -131,9 +131,12 @@ type tile struct {
 	x, y int
 }
 
+// steps are a region, with a corner at oX, oY, extending into the dirX, dirY
+// quarter plane.
 type steps struct {
-	count              [maxShortMoveSide][maxShortMoveSide]int
-	oX, oY, dirX, dirY int
+	count      [maxShortMoveSide][maxShortMoveSide]int
+	oX, oY     int // origin point of this region in the larger terrain
+	dirX, dirY int // direction that this region extends from the origin
 }
 
 func distSquared(a, b tile) int {
@@ -182,6 +185,12 @@ func checkMove(who *Character, terrain Terrain, s *steps, x, y int) bool {
 	)
 }
 
+// attemptShortMove attempts to move a character across some terrain toward a
+// goal with a given distance budget. It returns the distance traveled by the
+// character and updates the location of the character in-place.
+// "Short moves" take place inside of a maxShortSide x maxShortSide square -
+// the character will attempt to move to the spot in the square closest to the
+// goal.
 func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistance float64) float64 {
 	if walkDistance < 0 {
 		panic("walkDistance must not be negative")
@@ -198,7 +207,7 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	//
 	// Ends with a move of one tile and an offset of 0.2
 	//
-	// As a special case, if the character arrives at goal, then it's
+	// As a special case, if the character arrives at goal, then its
 	// offset will be goal.Offset - the character will decline to move
 	// all of walkDistance.
 
@@ -234,14 +243,15 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	}
 
 	steps := &steps{
-		// Because of dirX, the sign of visionOffset isn't what you think it should be
+		// Because of dirX, the sign of visionOffset isn't what you
+		// think it should be
 		oX:   who.Location.X - dirX*visionOffsetX,
 		oY:   who.Location.Y - dirY*visionOffsetY,
 		dirX: dirX,
 		dirY: dirY,
 	}
 
-	for x, _ := range steps.count {
+	for x := range steps.count {
 		for y := range steps.count[x] {
 			steps.count[x][y] = -1
 		}
@@ -289,8 +299,8 @@ func attemptShortMove(who *Character, terrain Terrain, goal Location, walkDistan
 	closestSteps := readStep(steps, closestPoint)
 	closestDistSquared := distSquared(closestPoint, goalTile)
 
-	for x, _ := range steps.count {
-		for y, _ := range steps.count[x] {
+	for x := range steps.count {
+		for y := range steps.count[x] {
 			pt := tile{
 				x: steps.oX + (x * steps.dirX),
 				y: steps.oY + (y * steps.dirY),
